@@ -7,9 +7,11 @@ import {
   MAX_LAYERS, allStrokes, canDraw, createDocument, createReferenceState, getLayer, layerIndex, referenceVisible,
   restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
 } from "./layers.js";
+import { settlePencil } from "./pencil.js";
 import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
 import { createRuler, dragEnd, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeHits } from "./strokes.js";
+import { COLORED, clampSize, restoreToolSettings, stepSize } from "./tools.js";
 import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoomAt } from "./view.js";
 
 const PAPER_W = 1000;
@@ -39,7 +41,7 @@ const state = {
   reference: null, // { kind: "builtin", id, name, meta } or { kind: "upload", name, dataUrl }
   underlay: null, // HTMLImageElement drawn on the paper
   tool: "pencil",
-  color: "#e0604a",
+  tools: restoreToolSettings(), // tool -> { size, color }
   underlayState: createReferenceState(),
   history: new History(createDocument()),
   activeLayer: "sketch",
@@ -67,6 +69,7 @@ function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       level: state.level, reference: state.reference, ...serializeDocument(state.history.doc), active: state.activeLayer,
       rulerOn: state.rulerOn, ruler: state.ruler, underlayOpacity: state.underlayState.opacity,
+      tools: state.tools, tool: state.tool,
     }));
   } catch { /* private mode or full storage: drawing still works */ }
 }
@@ -80,6 +83,7 @@ function load() {
     ensureActiveLayer();
     state.ruler = restoreRuler(saved.ruler) ?? state.ruler;
     state.rulerOn = saved.rulerOn === true;
+    state.tools = restoreToolSettings(saved.tools);
     setReferenceOpacity(state.underlayState, saved.underlayOpacity ?? state.underlayState.opacity);
     $("opacity").value = String(state.underlayState.opacity);
     return saved;
@@ -305,11 +309,10 @@ function startStroke(event) {
     eraseAt(px, py);
     return;
   }
-  const tool = TOOLS[state.tool];
+  const settings = state.tools[state.tool];
   state.current = createStroke({
-    layer: layer.id, tool: state.tool, size: tool.size, opacity: tool.opacity,
-    color: state.tool === "brush" ? state.color : tool.color,
-    simulatePressure: event.pointerType !== "pen",
+    layer: layer.id, tool: state.tool, size: settings.size, opacity: TOOLS[state.tool].opacity,
+    color: settings.color, simulatePressure: event.pointerType !== "pen",
   });
   // A stroke that starts against the ruler is pulled onto its edge for its whole length.
   if (rulerEnabled() && snapsToRuler(state.ruler, [px, py], RULER_REACH / state.view.scale)) state.current.ruled = true;
@@ -325,12 +328,14 @@ function addEventPoint(event) {
     const pressure = e.pointerType === "pen" ? e.pressure : 0.5;
     addPoint(state.current, px, py, pressure, e.timeStamp, e.tiltX || 0, e.tiltY || 0);
   }
+  // Pressure sets how dark the pencil is, and laying it flat turns the stroke into shading, while drawing.
+  settlePencil(state.current);
   state.dirty = true;
 }
 
 /** The eraser is a fixed size on screen, whatever the zoom. */
 function eraserRadius() {
-  return TOOLS.eraser.radius / state.view.scale;
+  return state.tools.eraser.size / state.view.scale;
 }
 
 function eraseAt(px, py) {
@@ -345,7 +350,7 @@ function eraseAt(px, py) {
 function finishStroke(cancel = false) {
   if (state.current) {
     if (!cancel && state.current.points.length) {
-      state.history.add(state.current);
+      state.history.add(settlePencil(state.current));
       afterChange();
     }
     state.current = null;
@@ -485,11 +490,33 @@ function undo() { if (state.history.undo()) { state.marks = []; afterChange(); }
 function redo() { if (state.history.redo()) { state.marks = []; afterChange(); } }
 
 function setTool(tool) {
+  if (!TOOLS[tool]) tool = "pencil";
   state.tool = tool;
-  document.querySelectorAll("[data-tool]").forEach((b) => b.classList.toggle("active", b.dataset.tool === tool));
+  document.querySelectorAll("[data-tool]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tool === tool);
+    b.setAttribute("aria-pressed", String(b.dataset.tool === tool));
+  });
   state.eraserAt = null;
+  renderToolSettings();
   renderLayers();
   state.dirty = true;
+}
+
+/** The colour and size controls show the current tool's own settings. */
+function renderToolSettings() {
+  const spec = TOOLS[state.tool], settings = state.tools[state.tool];
+  const size = $("size");
+  size.min = String(spec.min); size.max = String(spec.max);
+  size.value = String(settings.size);
+  $("size-value").textContent = String(settings.size);
+  $("color").hidden = !COLORED.includes(state.tool);
+  if (settings.color) $("color").value = settings.color;
+}
+
+function setSize(value) {
+  state.tools[state.tool].size = clampSize(state.tool, value);
+  renderToolSettings();
+  save();
 }
 
 function rotateBy(angle) {
@@ -902,8 +929,10 @@ function wire() {
   document.addEventListener("touchmove", (e) => { if (e.target === canvas) e.preventDefault(); }, { passive: false });
   window.addEventListener("resize", resize);
 
-  document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
-  $("color").addEventListener("input", (e) => { state.color = e.target.value; });
+  document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => { setTool(b.dataset.tool); save(); }));
+  $("color").addEventListener("input", (e) => { if (state.tools[state.tool].color) state.tools[state.tool].color = e.target.value; });
+  $("color").addEventListener("change", save);
+  $("size").addEventListener("input", (e) => setSize(e.target.value));
   $("undo").addEventListener("click", undo);
   $("redo").addEventListener("click", redo);
   $("rotate-left").addEventListener("click", () => rotateBy(-Math.PI / 12));
@@ -948,8 +977,9 @@ function wire() {
     if ((e.metaKey || e.ctrlKey) && key === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); return; }
     if (e.metaKey || e.ctrlKey) return;
     if (e.code === "Space") { state.input.spaceDown = true; e.preventDefault(); return; }
-    const tools = { p: "pencil", i: "ink", b: "brush", e: "eraser" };
-    if (tools[key]) setTool(tools[key]);
+    const tools = { p: "pencil", s: "shade", i: "ink", b: "brush", e: "eraser" };
+    if (tools[key]) { setTool(tools[key]); save(); }
+    else if (key === "[" || key === "]") setSize(stepSize(state.tool, state.tools[state.tool].size, key === "]" ? 1 : -1));
     else if (key === "l") toggleRuler();
     else if (key === "n" && e.shiftKey) addLayer();
     else if (key === "r") rotateBy((e.shiftKey ? -1 : 1) * Math.PI / 12);
@@ -981,7 +1011,7 @@ async function start() {
   }
   const level = Number.isInteger(saved?.level) ? saved.level : 1;
   $("level").value = String(level);
-  setTool("pencil");
+  setTool(saved?.tool ?? "pencil");
   setLevel(level);
   renderLayers();
 }

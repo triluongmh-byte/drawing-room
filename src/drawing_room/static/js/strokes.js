@@ -3,6 +3,8 @@
 
 export const MIN_POINT_DISTANCE = 0.75;
 
+import { paintedSize } from "./pencil.js";
+
 let nextId = 1;
 
 export function createStroke({ layer, tool, color = "#111111", size = 4, opacity = 1, simulatePressure = false, id } = {}) {
@@ -54,9 +56,9 @@ export function distanceToSegment(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-/** Whether a circle of `radius` at (x, y) touches the stroke's centre line (widened by half its size). */
+/** Whether a circle of `radius` at (x, y) touches the stroke's centre line (widened by half its painted width). */
 export function strokeHits(stroke, x, y, radius) {
-  const reach = radius + stroke.size / 2;
+  const reach = radius + paintedSize(stroke) / 2;
   const box = strokeBounds(stroke);
   if (!box || x < box.x0 - reach || x > box.x1 + reach || y < box.y0 - reach || y > box.y1 + reach) return false;
   const pts = stroke.points;
@@ -72,6 +74,8 @@ export function serializeStroke(stroke) {
   const round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;
   return {
     id: stroke.id, layer: stroke.layer, tool: stroke.tool, color: stroke.color, size: stroke.size,
+    // Shading is tone, not line: scoring and the coach leave it out.
+    ...(stroke.shade ? { shade: true } : {}),
     points: stroke.points.map(([x, y, p, t, tx, ty]) => [round(x, 1), round(y, 1), round(p, 3), Math.round(t), Math.round(tx), Math.round(ty)]),
   };
 }
