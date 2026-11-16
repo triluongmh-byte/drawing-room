@@ -100,11 +100,22 @@ select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; ba
 .slider input { width: 100%; }
 
 .layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column-reverse; gap: 4px; }
-.layers li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; }
+.layers li { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
 .layers li.active { background: #efe9dd; }
+.layers li.reference-row { cursor: default; border-top: 1px dashed var(--line, #d8d2c6); margin-top: 2px; padding-top: 6px; }
 .layers button.eye { min-height: 30px; padding: 2px 8px; width: 40px; }
-.layers .name { flex: 1; cursor: pointer; }
-.layers .count { font-size: 12px; color: var(--muted); }
+.layers button.lock, .layers button.scored { min-height: 30px; width: 34px; padding: 2px 0; }
+.layers button.scored[aria-pressed="true"] { color: #b07a00; }
+.layers .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layers input.name { font: inherit; padding: 3px 6px; border: 1px solid #c9c0b0; border-radius: 5px; background: #fffdf9; color: inherit; cursor: text; }
+.layers .count { font-size: 12px; color: var(--muted); min-width: 1.5em; text-align: right; white-space: nowrap; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.panel-head h2 { margin: 0; }
+.layer-actions { display: flex; gap: 4px; }
+.layer-actions button { min-height: 30px; padding: 2px 8px; }
+.layers-hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.ruler-angle input { width: 4.5em; }
+.hint.flash { background: #2f6f8f; color: #fff; }
 
 .steps { margin: 0 0 6px; padding-left: 20px; font-size: 14px; }
 .steps li.done { color: var(--muted); text-decoration: line-through; }
@@ -143,4 +154,5 @@ select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; ba
   }
   :root:not([data-theme="light"]) .score > div { background: #33312d; }
   :root:not([data-theme="light"]) .layers li.active { background: #3a3732; }
+  :root:not([data-theme="light"]) .layers input.name { background: #24221f; border-color: #4a463f; }
 }

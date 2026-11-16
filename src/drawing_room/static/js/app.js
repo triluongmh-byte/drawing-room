@@ -1,16 +1,22 @@
 // The drawing room UI: paper, tools, layers, references, levels, scoring and the coach.
 
 import { getJSON, postJSON, setUnauthorisedHandler } from "./api.js";
-import { History, allStrokes, createDocument } from "./history.js";
+import { History } from "./history.js";
 import { classifyPointer, createInputState } from "./input.js";
-import { DRAWABLE, LAYERS, createLayerState, isVisible, layerForTool, setActive, setReferenceOpacity, toggleVisible } from "./layers.js";
+import {
+  MAX_LAYERS, allStrokes, canDraw, createDocument, createReferenceState, getLayer, layerIndex, referenceVisible,
+  restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
+} from "./layers.js";
 import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
+import { createRuler, dragEnd, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeHits } from "./strokes.js";
 import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoomAt } from "./view.js";
 
 const PAPER_W = 1000;
 const PAPER_H = 750;
 const STORAGE_KEY = "drawing-room:v0";
+const RULER_REACH = 28; // screen pixels: a stroke starting this close to the ruler follows it
+const HANDLE_RADIUS = 16; // screen pixels
 const LEVELS = {
   0: { underlay: "guide", coach: false, guide: false, submit: false, drillsOnly: true, autoScore: true },
   1: { underlay: "full", coach: true, guide: true, submit: false },
@@ -22,6 +28,10 @@ const LEVELS = {
 const $ = (id) => document.getElementById(id);
 const canvas = $("paper");
 const ctx = canvas.getContext("2d");
+// A layer with opacity below 1 is painted here first, then laid onto the paper at that opacity,
+// so its own overlapping strokes do not darken each other.
+const layerCanvas = document.createElement("canvas");
+const layerCtx = layerCanvas.getContext("2d");
 
 const state = {
   level: 1,
@@ -30,8 +40,12 @@ const state = {
   underlay: null, // HTMLImageElement drawn on the paper
   tool: "pencil",
   color: "#e0604a",
-  layers: createLayerState(),
+  underlayState: createReferenceState(),
   history: new History(createDocument()),
+  activeLayer: "sketch",
+  rulerOn: false,
+  ruler: createRuler(PAPER_W / 2, PAPER_H / 2, 600, 0),
+  rulerDrag: null, // { handle, start, ruler } while an end or the middle is dragged
   input: createInputState(),
   view: { x: 0, y: 0, scale: 1, rotation: 0 },
   viewFitted: false,
@@ -50,8 +64,10 @@ const state = {
 
 function save() {
   try {
-    const layers = Object.fromEntries(DRAWABLE.map((id) => [id, state.history.doc.layers[id]]));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ level: state.level, reference: state.reference, layers }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      level: state.level, reference: state.reference, ...serializeDocument(state.history.doc), active: state.activeLayer,
+      rulerOn: state.rulerOn, ruler: state.ruler, underlayOpacity: state.underlayState.opacity,
+    }));
   } catch { /* private mode or full storage: drawing still works */ }
 }
 
@@ -59,11 +75,39 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
     if (!saved) return null;
-    const doc = createDocument();
-    for (const id of DRAWABLE) doc.layers[id] = Array.isArray(saved.layers?.[id]) ? saved.layers[id] : [];
-    state.history = new History(doc);
+    state.history = new History(restoreDocument(saved));
+    state.activeLayer = typeof saved.active === "string" ? saved.active : "sketch";
+    ensureActiveLayer();
+    state.ruler = restoreRuler(saved.ruler) ?? state.ruler;
+    state.rulerOn = saved.rulerOn === true;
+    setReferenceOpacity(state.underlayState, saved.underlayOpacity ?? state.underlayState.opacity);
+    $("opacity").value = String(state.underlayState.opacity);
     return saved;
   } catch { return null; }
+}
+
+// ------------------------------------------------------------------ layers
+
+function activeLayer() {
+  return getLayer(state.history.doc, state.activeLayer);
+}
+
+/** After an undo or a delete the active layer may be gone: fall back to the nearest one. */
+function ensureActiveLayer() {
+  if (!activeLayer()) state.activeLayer = state.history.doc.layers.at(-1).id;
+}
+
+let flashTimer = null;
+function flash(message) {
+  const hint = $("paper-hint");
+  hint.textContent = message;
+  hint.classList.add("flash");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { hint.textContent = hint.dataset.text; hint.classList.remove("flash"); }, 2500);
+}
+
+function rulerEnabled() {
+  return state.rulerOn && !LEVELS[state.level].drillsOnly;
 }
 
 // ------------------------------------------------------------------ rendering
@@ -114,6 +158,85 @@ function drawMarks() {
   }
 }
 
+function paintLayer(layer, transform) {
+  const live = state.current?.layer === layer.id && state.current.points.length;
+  if (!layer.visible || layer.opacity <= 0 || (!layer.strokes.length && !live)) return;
+  let target = ctx;
+  if (layer.opacity < 1) {
+    if (layerCanvas.width !== canvas.width || layerCanvas.height !== canvas.height) {
+      layerCanvas.width = canvas.width; layerCanvas.height = canvas.height;
+    }
+    layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+    layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
+    layerCtx.setTransform(transform);
+    target = layerCtx;
+  }
+  for (const stroke of layer.strokes) {
+    if (state.erasing?.removed.has(stroke)) continue;
+    paintStroke(target, stroke, cachedPath(stroke));
+  }
+  if (live) paintStroke(target, state.current, strokePath(state.current));
+  if (target !== ctx) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = layer.opacity;
+    ctx.drawImage(layerCanvas, 0, 0); // the paper clip on ctx still applies
+    ctx.restore();
+  }
+}
+
+/** The ruler: a translucent band with ticks every 10 paper pixels, round handles at the ends, a move handle in the middle. */
+function drawRuler() {
+  if (!rulerEnabled()) return;
+  const ruler = state.ruler;
+  const s = state.view.scale;
+  const [ax, ay] = ruler.a, [bx, by] = ruler.b;
+  const length = rulerLength(ruler);
+  const ux = (bx - ax) / length, uy = (by - ay) / length;
+  const nx = -uy, ny = ux;
+  const band = 18 / s;
+  ctx.save();
+  ctx.fillStyle = "rgba(47, 111, 143, 0.13)";
+  ctx.beginPath();
+  ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(bx + nx * band, by + ny * band); ctx.lineTo(ax + nx * band, ay + ny * band);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(47, 111, 143, 0.9)";
+  ctx.lineWidth = 1.5 / s;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  for (let d = 0; d <= length; d += 10) {
+    const tick = d % 100 === 0 ? band * 0.75 : d % 50 === 0 ? band * 0.5 : band * 0.28;
+    const px = ax + ux * d, py = ay + uy * d;
+    ctx.moveTo(px, py); ctx.lineTo(px + nx * tick, py + ny * tick);
+  }
+  ctx.stroke();
+  for (const [x, y] of [ruler.a, ruler.b]) {
+    ctx.beginPath();
+    ctx.arc(x, y, 9 / s, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff"; ctx.fill();
+    ctx.lineWidth = 2 / s; ctx.stroke();
+  }
+  const [cx, cy] = rulerCenter(ruler);
+  ctx.beginPath();
+  ctx.arc(cx, cy, 8 / s, 0, Math.PI * 2);
+  ctx.fillStyle = "#2f6f8f"; ctx.fill();
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5 / s;
+  ctx.beginPath();
+  ctx.moveTo(cx - 4.5 / s, cy); ctx.lineTo(cx + 4.5 / s, cy); ctx.moveTo(cx, cy - 4.5 / s); ctx.lineTo(cx, cy + 4.5 / s);
+  ctx.stroke();
+  const label = `${rulerAngle(ruler)}°`;
+  ctx.font = `600 ${13 / s}px -apple-system, sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const lx = cx - nx * 16 / s, ly = cy - ny * 16 / s;
+  const width = ctx.measureText(label).width + 10 / s;
+  ctx.fillStyle = "rgba(47, 111, 143, 0.92)";
+  ctx.fillRect(lx - width / 2, ly - 9 / s, width, 18 / s);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(label, lx, ly);
+  ctx.restore();
+}
+
 function render() {
   state.dirty = false;
   const dpr = window.devicePixelRatio || 1;
@@ -134,23 +257,15 @@ function render() {
   ctx.beginPath();
   ctx.rect(0, 0, PAPER_W, PAPER_H);
   ctx.clip();
-  if (isVisible(state.layers, "reference") && state.underlay?.complete && state.underlay.naturalWidth) {
-    ctx.globalAlpha = state.layers.referenceOpacity;
+  if (referenceVisible(state.underlayState) && state.underlay?.complete && state.underlay.naturalWidth) {
+    ctx.globalAlpha = state.underlayState.opacity;
     ctx.drawImage(state.underlay, 0, 0, PAPER_W, PAPER_H);
     ctx.globalAlpha = 1;
   }
-  for (const layer of DRAWABLE) {
-    if (!isVisible(state.layers, layer)) continue;
-    for (const stroke of state.history.doc.layers[layer]) {
-      if (state.erasing?.removed.has(stroke)) continue;
-      paintStroke(ctx, stroke, cachedPath(stroke));
-    }
-    if (state.current?.layer === layer && state.current.points.length) {
-      paintStroke(ctx, state.current, strokePath(state.current));
-    }
-  }
+  for (const layer of state.history.doc.layers) paintLayer(layer, ctx.getTransform());
   drawMarks();
   ctx.restore();
+  drawRuler();
 
   if (state.eraserAt) {
     ctx.strokeStyle = "rgba(60,60,60,0.7)";
@@ -180,18 +295,24 @@ function capture(event) {
 function startStroke(event) {
   const [sx, sy] = local(event);
   const [px, py] = screenToPaper(state.view, sx, sy);
+  const layer = activeLayer();
+  if (!canDraw(layer)) {
+    flash(`“${layer.name}” is ${layer.locked ? "locked" : "hidden"}. Unlock or show it, or pick another layer.`);
+    return;
+  }
   if (state.tool === "eraser") {
     state.erasing = { removed: new Set() };
     eraseAt(px, py);
     return;
   }
   const tool = TOOLS[state.tool];
-  const layer = layerForTool(state.layers, state.tool);
   state.current = createStroke({
-    layer, tool: state.tool, size: tool.size, opacity: tool.opacity,
+    layer: layer.id, tool: state.tool, size: tool.size, opacity: tool.opacity,
     color: state.tool === "brush" ? state.color : tool.color,
     simulatePressure: event.pointerType !== "pen",
   });
+  // A stroke that starts against the ruler is pulled onto its edge for its whole length.
+  if (rulerEnabled() && snapsToRuler(state.ruler, [px, py], RULER_REACH / state.view.scale)) state.current.ruled = true;
   addEventPoint(event);
 }
 
@@ -199,7 +320,8 @@ function addEventPoint(event) {
   const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
   for (const e of events.length ? events : [event]) {
     const [sx, sy] = local(e);
-    const [px, py] = screenToPaper(state.view, sx, sy);
+    let [px, py] = screenToPaper(state.view, sx, sy);
+    if (state.current.ruled) [px, py] = projectOnto(state.ruler, [px, py]);
     const pressure = e.pointerType === "pen" ? e.pressure : 0.5;
     addPoint(state.current, px, py, pressure, e.timeStamp, e.tiltX || 0, e.tiltY || 0);
   }
@@ -212,9 +334,8 @@ function eraserRadius() {
 }
 
 function eraseAt(px, py) {
-  const layer = state.layers.active;
   const radius = eraserRadius();
-  for (const stroke of state.history.doc.layers[layer]) {
+  for (const stroke of activeLayer().strokes) {
     if (!state.erasing.removed.has(stroke) && strokeHits(stroke, px, py, radius)) state.erasing.removed.add(stroke);
   }
   state.eraserAt = [px, py];
@@ -270,8 +391,16 @@ function onPointerDown(event) {
       }
     }
   }
-  if (mode === "draw" && (state.current || state.erasing)) mode = "ignore"; // one drawing pointer at a time
+  if (mode === "draw" && (state.current || state.erasing || state.rulerDrag)) mode = "ignore"; // one drawing pointer at a time
   const [x, y] = local(event);
+  if (mode === "draw" && rulerEnabled()) {
+    const point = screenToPaper(state.view, x, y);
+    const handle = hitHandle(state.ruler, point, HANDLE_RADIUS / state.view.scale);
+    if (handle) {
+      mode = "ruler";
+      state.rulerDrag = { handle, start: point, ruler: state.ruler };
+    }
+  }
   state.pointers.set(event.pointerId, { id: event.pointerId, type: event.pointerType, mode, x, y, last: [x, y] });
   capture(event);
   if (mode === "draw") startStroke(event);
@@ -293,6 +422,14 @@ function onPointerMove(event) {
   if (pointer.mode === "draw") {
     if (state.current) addEventPoint(event);
     else if (state.erasing) eraseAt(...screenToPaper(state.view, x, y));
+  } else if (pointer.mode === "ruler" && state.rulerDrag) {
+    const drag = state.rulerDrag;
+    const [px, py] = screenToPaper(state.view, x, y);
+    state.ruler = drag.handle === "move"
+      ? moveRuler(drag.ruler, px - drag.start[0], py - drag.start[1])
+      : dragEnd(drag.ruler, drag.handle, [px, py], { snap: !event.altKey });
+    showRulerAngle();
+    state.dirty = true;
   } else if (pointer.mode === "pan") {
     setView(pan(state.view, x - pointer.last[0], y - pointer.last[1]));
   } else if (pointer.mode === "gesture" && state.gesture) {
@@ -313,6 +450,10 @@ function onPointerUp(event) {
   state.pointers.delete(event.pointerId);
   if (pointer.mode === "draw") finishStroke(event.type === "pointercancel");
   if (pointer.mode === "gesture") startGesture();
+  if (pointer.mode === "ruler") {
+    state.rulerDrag = null;
+    save();
+  }
 }
 
 function onWheel(event) {
@@ -332,18 +473,19 @@ function onWheel(event) {
 // ------------------------------------------------------------------ actions
 
 function afterChange() {
+  ensureActiveLayer();
   save();
   updateButtons();
   renderLayers();
+  state.dirty = true;
   if (LEVELS[state.level].guide || LEVELS[state.level].autoScore) scheduleGuide();
 }
 
-function undo() { if (state.history.undo()) { state.marks = []; afterChange(); state.dirty = true; } }
-function redo() { if (state.history.redo()) { state.marks = []; afterChange(); state.dirty = true; } }
+function undo() { if (state.history.undo()) { state.marks = []; afterChange(); } }
+function redo() { if (state.history.redo()) { state.marks = []; afterChange(); } }
 
 function setTool(tool) {
   state.tool = tool;
-  if (tool !== "eraser") setActive(state.layers, layerForTool(state.layers, tool));
   document.querySelectorAll("[data-tool]").forEach((b) => b.classList.toggle("active", b.dataset.tool === tool));
   state.eraserAt = null;
   renderLayers();
@@ -360,29 +502,153 @@ function updateButtons() {
   $("redo").disabled = !state.history.canRedo || state.submitted;
 }
 
+function iconButton(className, text, title, onClick, { pressed = null, disabled = false } = {}) {
+  const button = document.createElement("button");
+  button.className = className;
+  button.textContent = text;
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  if (pressed !== null) button.setAttribute("aria-pressed", String(pressed));
+  button.disabled = disabled;
+  button.addEventListener("click", (event) => { event.stopPropagation(); onClick(); });
+  return button;
+}
+
+function selectLayer(id) {
+  if (id === state.activeLayer) return;
+  state.activeLayer = id;
+  save();
+  renderLayers();
+}
+
+function commitRename(id, value) {
+  if (state.history.renameLayer(id, value)) afterChange();
+  else if (state.activeLayer !== id) renderLayers(); // another layer was picked while this name was being edited
+  else { const input = $("layers").querySelector("input.name"); if (input) input.value = activeLayer().name; }
+}
+
+/** Show the active layer's name field focused and selected, ready to type a new name. */
+function focusLayerName() {
+  const input = $("layers").querySelector("input.name");
+  if (input) { input.focus(); input.select(); }
+}
+
+/** The layer list, top of the stack first (the CSS reverses the DOM order); the reference underlay sits below it. */
 function renderLayers() {
   const list = $("layers");
+  // Typing a name: do not rebuild the list under the cursor.
+  if (list.contains(document.activeElement) && document.activeElement.matches("input.name")) return;
   list.innerHTML = "";
-  for (const layer of LAYERS) {
+
+  const reference = document.createElement("li");
+  reference.className = "reference-row";
+  const locked = state.underlayState.locked;
+  reference.append(
+    iconButton("eye", referenceVisible(state.underlayState) ? "👁" : "–", locked ? "No underlay at this level" : "Show or hide the reference underlay",
+      () => { state.underlayState.visible = !state.underlayState.visible; renderLayers(); state.dirty = true; },
+      { pressed: referenceVisible(state.underlayState), disabled: locked }),
+    Object.assign(document.createElement("span"), { className: "name", textContent: "Reference" }),
+    Object.assign(document.createElement("span"), { className: "count", textContent: locked ? "off" : "" }),
+  );
+  list.append(reference);
+
+  for (const layer of state.history.doc.layers) {
     const item = document.createElement("li");
-    item.classList.toggle("active", layer.id === state.layers.active);
-    const eye = document.createElement("button");
-    eye.className = "eye";
-    const locked = layer.id === "reference" && state.layers.referenceLocked;
-    eye.textContent = isVisible(state.layers, layer.id) ? "👁" : "–";
-    eye.title = locked ? "No underlay at this level" : `Show or hide ${layer.name}`;
-    eye.disabled = locked;
-    eye.addEventListener("click", () => { toggleVisible(state.layers, layer.id); renderLayers(); state.dirty = true; });
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = layer.name;
-    if (layer.drawable) name.addEventListener("click", () => { setActive(state.layers, layer.id); renderLayers(); });
-    const count = document.createElement("span");
-    count.className = "count";
-    count.textContent = layer.drawable ? `${state.history.doc.layers[layer.id].length}` : (locked ? "off" : "");
-    item.append(eye, name, count);
+    const isActive = layer.id === state.activeLayer;
+    item.classList.toggle("active", isActive);
+    item.dataset.layer = layer.id;
+    // pointerdown, not click: it lands before a name field being edited loses focus and the list is rebuilt.
+    item.addEventListener("pointerdown", (event) => { if (!event.target.closest("button, input")) selectLayer(layer.id); });
+    const eye = iconButton("eye", layer.visible ? "👁" : "–", `Show or hide ${layer.name}`,
+      () => { layer.visible = !layer.visible; save(); renderLayers(); state.dirty = true; }, { pressed: layer.visible });
+    let name;
+    if (isActive) {
+      // The active layer's name is a text field: tap it and type to rename.
+      name = document.createElement("input");
+      name.className = "name";
+      name.value = layer.name;
+      name.maxLength = 40;
+      name.setAttribute("aria-label", "Layer name");
+      name.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); name.blur(); }
+        if (event.key === "Escape") { name.value = layer.name; name.blur(); }
+      });
+      name.addEventListener("blur", () => commitRename(layer.id, name.value));
+    } else {
+      name = Object.assign(document.createElement("span"), { className: "name", textContent: layer.name });
+    }
+    const lock = iconButton("lock", layer.locked ? "🔒" : "🔓", layer.locked ? `Unlock ${layer.name}` : `Lock ${layer.name}`,
+      () => { layer.locked = !layer.locked; save(); renderLayers(); }, { pressed: layer.locked });
+    const scored = iconButton("scored", layer.scored ? "★" : "☆",
+      layer.scored ? `${layer.name} counts towards the score` : `${layer.name} is not scored`,
+      () => { layer.scored = !layer.scored; save(); renderLayers(); }, { pressed: layer.scored });
+    const count = Object.assign(document.createElement("span"), { className: "count", textContent: String(layer.strokes.length) });
+    if (layer.opacity < 1) count.textContent += ` · ${Math.round(layer.opacity * 100)}%`;
+    item.append(eye, name, lock, scored, count);
     list.append(item);
   }
+
+  const active = activeLayer();
+  const index = layerIndex(state.history.doc, active.id);
+  $("layer-opacity").value = String(active.opacity);
+  $("layer-opacity-value").textContent = `${Math.round(active.opacity * 100)}%`;
+  $("layer-up").disabled = index >= state.history.doc.layers.length - 1;
+  $("layer-down").disabled = index <= 0;
+  $("layer-delete").disabled = state.history.doc.layers.length <= 1;
+  $("layer-add").disabled = state.history.doc.layers.length >= MAX_LAYERS;
+  $("layer-clear").disabled = !active.strokes.length;
+}
+
+function addLayer() {
+  const layer = state.history.addLayer({}, state.activeLayer);
+  if (!layer) return flash(`You can have up to ${MAX_LAYERS} layers.`);
+  state.activeLayer = layer.id;
+  afterChange();
+  focusLayerName();
+}
+
+function deleteLayer() {
+  const layer = activeLayer();
+  const index = layerIndex(state.history.doc, layer.id);
+  if (!state.history.removeLayer(layer.id)) return;
+  const layers = state.history.doc.layers;
+  state.activeLayer = layers[Math.max(0, index - 1)].id;
+  state.marks = [];
+  afterChange();
+  flash(`Deleted “${layer.name}”. Undo (⌘Z) brings it back.`);
+}
+
+function moveLayer(delta) {
+  if (state.history.moveLayer(state.activeLayer, delta)) afterChange();
+}
+
+function clearLayer() {
+  const layer = activeLayer();
+  if (state.history.clear([layer.id])) { state.marks = []; afterChange(); }
+}
+
+// ------------------------------------------------------------------ ruler
+
+function showRulerAngle() {
+  const input = $("ruler-angle");
+  if (document.activeElement !== input) input.value = String(rulerAngle(state.ruler));
+}
+
+function renderRulerControls() {
+  const available = !LEVELS[state.level].drillsOnly;
+  $("ruler-toggle").hidden = !available;
+  $("ruler-toggle").classList.toggle("active", state.rulerOn);
+  $("ruler-toggle").setAttribute("aria-pressed", String(state.rulerOn));
+  $("ruler-angle-wrap").hidden = !available || !state.rulerOn;
+  showRulerAngle();
+}
+
+function toggleRuler() {
+  if (LEVELS[state.level].drillsOnly) return;
+  state.rulerOn = !state.rulerOn;
+  renderRulerControls();
+  save();
+  state.dirty = true;
 }
 
 // ------------------------------------------------------------------ references and levels
@@ -449,7 +715,7 @@ function chooseBuiltin(id) {
 function setLevel(level) {
   state.level = level;
   const config = LEVELS[level];
-  state.layers.referenceLocked = config.underlay === "none";
+  state.underlayState.locked = config.underlay === "none";
   state.submitted = false;
   $("guide-panel").hidden = !config.guide;
   $("ask-button").disabled = !config.coach;
@@ -461,8 +727,10 @@ function setLevel(level) {
   fillReferenceSelect();
   applyReference();
   renderLayers();
+  renderRulerControls();
   updateButtons();
   save();
+  state.dirty = true;
   if (config.guide) scheduleGuide(0);
 }
 
@@ -495,7 +763,7 @@ function scoringBody(extra = {}) {
   return {
     level: state.level,
     reference: referencePayload(),
-    strokes: allStrokes(state.history.doc).map(serializeStroke),
+    strokes: strokesForScoring(state.history.doc, serializeStroke),
     ...extra,
   };
 }
@@ -642,11 +910,29 @@ function wire() {
   $("rotate-right").addEventListener("click", () => rotateBy(Math.PI / 12));
   $("fit").addEventListener("click", fit);
   $("clear").addEventListener("click", () => {
-    if (allStrokes(state.history.doc).length && confirm("Clear every stroke? You can undo this.")) {
-      state.history.clear(); state.marks = []; afterChange(); state.dirty = true;
+    if (allStrokes(state.history.doc).length && confirm("Clear every stroke on every layer? You can undo this.")) {
+      state.history.clear(); state.marks = []; afterChange();
     }
   });
-  $("opacity").addEventListener("input", (e) => { setReferenceOpacity(state.layers, e.target.value); state.dirty = true; });
+  $("opacity").addEventListener("input", (e) => { setReferenceOpacity(state.underlayState, e.target.value); state.dirty = true; });
+  $("opacity").addEventListener("change", save);
+  $("layer-add").addEventListener("click", addLayer);
+  $("layer-delete").addEventListener("click", deleteLayer);
+  $("layer-up").addEventListener("click", () => moveLayer(1));
+  $("layer-down").addEventListener("click", () => moveLayer(-1));
+  $("layer-clear").addEventListener("click", clearLayer);
+  $("layer-opacity").addEventListener("input", (e) => {
+    setLayerOpacity(activeLayer(), e.target.value);
+    $("layer-opacity-value").textContent = `${Math.round(activeLayer().opacity * 100)}%`;
+    state.dirty = true;
+  });
+  $("layer-opacity").addEventListener("change", () => { save(); renderLayers(); });
+  $("ruler-toggle").addEventListener("click", toggleRuler);
+  $("ruler-angle").addEventListener("change", (e) => {
+    const value = Number(e.target.value);
+    if (Number.isFinite(value)) { state.ruler = setAngle(state.ruler, value); save(); state.dirty = true; }
+    e.target.value = String(rulerAngle(state.ruler));
+  });
   $("level").addEventListener("change", (e) => setLevel(Number(e.target.value)));
   $("reference").addEventListener("change", (e) => { if (e.target.value !== "__upload") chooseBuiltin(e.target.value); });
   $("upload").addEventListener("change", (e) => { if (e.target.files[0]) uploadReference(e.target.files[0]); e.target.value = ""; });
@@ -664,6 +950,8 @@ function wire() {
     if (e.code === "Space") { state.input.spaceDown = true; e.preventDefault(); return; }
     const tools = { p: "pencil", i: "ink", b: "brush", e: "eraser" };
     if (tools[key]) setTool(tools[key]);
+    else if (key === "l") toggleRuler();
+    else if (key === "n" && e.shiftKey) addLayer();
     else if (key === "r") rotateBy((e.shiftKey ? -1 : 1) * Math.PI / 12);
     else if (key === "0") fit();
   });
@@ -671,6 +959,7 @@ function wire() {
 }
 
 async function start() {
+  $("paper-hint").dataset.text = $("paper-hint").textContent;
   wire();
   setUnauthorisedHandler(showPin);
   resize();
@@ -694,6 +983,7 @@ async function start() {
   $("level").value = String(level);
   setTool("pencil");
   setLevel(level);
+  renderLayers();
 }
 
 // Exposed for end-to-end tests and debugging in the console.

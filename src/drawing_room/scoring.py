@@ -29,7 +29,7 @@ TOLERANCE = 4.0  # score pixels (8 paper pixels): full credit this close to the 
 FALLOFF = 8.0  # credit then fades linearly to zero over this many more score pixels
 MISS_DISTANCE = 6.0  # ink further than this from the other ink is marked as a miss or a stray
 USER_WIDTH = 2
-SCORED_LAYERS = {"sketch", "line"}
+SCORED_LAYERS = {"sketch", "line"}  # used when a stroke does not say whether its layer is scored
 SHORT_STROKE = 25.0  # paper pixels; shorter strokes count as scratchy
 F_FOR_TEN = 0.92
 PROPORTION_SLACK = 0.03
@@ -103,11 +103,19 @@ def reference_mask(reference: Reference | Image.Image) -> tuple[np.ndarray, str]
 
 # ---------------------------------------------------------------- user ink
 
+def is_scored(stroke: dict) -> bool:
+    """Whether a stroke counts: its layer's `scored` flag, or for older clients, a Sketch or Line stroke."""
+    scored = stroke.get("scored")
+    if isinstance(scored, bool):
+        return scored
+    return stroke.get("layer") in SCORED_LAYERS
+
+
 def scored_strokes(strokes: list[dict]) -> list[list[tuple[float, float]]]:
-    """The (x, y) paper points of every Sketch and Line stroke."""
+    """The (x, y) paper points of every scored stroke."""
     result = []
     for stroke in strokes or []:
-        if stroke.get("layer") not in SCORED_LAYERS:
+        if not is_scored(stroke):
             continue
         points = [(float(p[0]), float(p[1])) for p in stroke.get("points", []) if len(p) >= 2
                   and math.isfinite(float(p[0])) and math.isfinite(float(p[1]))]
@@ -199,7 +207,7 @@ def regions(mask: np.ndarray, transform: Transform, prefix: str, kind: str) -> l
 def stroke_stats(strokes: list[dict]) -> dict:
     lengths, durations = [], []
     for stroke in strokes or []:
-        if stroke.get("layer") not in SCORED_LAYERS:
+        if not is_scored(stroke):
             continue
         points = stroke.get("points", [])
         length = sum(math.dist(points[i][:2], points[i + 1][:2]) for i in range(len(points) - 1))
