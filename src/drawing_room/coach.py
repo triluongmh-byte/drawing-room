@@ -35,7 +35,8 @@ You are given a machine score and an overlay image. The numbers and regions come
 never invent, change or recompute scores, and never make up coordinates. Refer to problem areas only by their region
 ids (M1, M2 for missing reference lines; S1, S2 for stray lines) or by plain words like "the top left".
 You never draw; you explain what to fix and what to practise next. Keep it short: at most about 120 words, using
-2-4 short bullet points or sentences. Do not use headings."""
+2-4 short bullet points or sentences. Write plain text: bullets start with "- ", no bold, no headings, no other
+markdown."""
 
 LEVEL_NAMES = {
     0: "Warm-up drill (straight line, circle or ellipse between guide dots)",
