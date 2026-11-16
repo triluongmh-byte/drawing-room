@@ -24,10 +24,18 @@ All JavaScript is served by the Mac, so the iPad needs no internet; the coach ne
 
 ## What you can do
 
-- **Paper**: pencil, ink, color brush with a color picker, and an eraser that removes whole strokes. Every tool works on
-  the active layer. Strokes follow pen pressure (via vendored
+- **Paper**: pencil, shade, ink, color brush and an eraser that removes whole strokes. Every tool works on the active
+  layer and keeps its own size and colour (the slider and swatch next to the tools; `[` / `]` change the size). Strokes follow pen pressure (via vendored
   [perfect-freehand](https://github.com/steveruizok/perfect-freehand), MIT) and are stored as vectors: every point keeps
   x, y, pressure, time and tilt, so drawings can be replayed and analysed. Undo/redo (⌘Z / ⇧⌘Z).
+- **Pencil** (P): graphite with paper grain. Press lightly for a thin, pale line and harder for a thick, dark one.
+  Lay an Apple Pencil or Wacom pen low on its side and the stroke turns into shading: a broad, light, grainy band
+  that darkens as you go over it again. With a mouse or trackpad (no tilt), use **Shade** (S) for the same band.
+  The swatch makes it a coloured pencil. Shading is tone, not line, so it never counts towards the score.
+
+  ![Pencil: light and firm lines, tilted shading, the Shade tool and a coloured pencil](docs/screenshots/11-pencil.png)
+- **Toolbar**: one row on an iPad in landscape (icons with tooltips; labels on wider screens), two rows in portrait.
+  The reference picker and upload sit in the Reference panel.
 - **Layers**, like a paint program. A new drawing starts with Sketch, Line and Color; add up to 24 (＋ or ⇧N), and a
   new layer opens with its name field ready to type. Tap a layer to draw on it, tap the active layer's name to rename it.
   Each layer can be hidden (👁), locked (🔒, takes no strokes and no erasing), set to its own opacity, moved up or down,
@@ -57,6 +65,7 @@ All JavaScript is served by the Mac, so the iPad needs no internet; the coach ne
 1. Reference lines: built-ins are rendered from their vectors; uploaded line art is thresholded; photos go through
    edge detection (best effort). Thick lines are thinned to a centre line.
 2. Your strokes on visible ★ layers are rasterised at a constant thin width (pressure does not change the score).
+   Shading strokes (the Shade tool, or a tilted pencil) are left out.
 3. Levels 3–4 first move and uniformly scale your ink onto the reference (centroid and spread; never rotation).
 4. A distance transform gives *recall* (share of the reference with your ink nearby) and *precision* (share of your ink
    near the reference), with a few pixels of full credit fading to zero a little further out.
@@ -84,8 +93,10 @@ coordinates. With `ANTHROPIC_API_KEY` set (and `anthropic` installed) it calls t
 
 ```bash
 uv run pytest            # scoring, server, PIN/Origin, logging, coach prompt (claude mocked)
-npm test                 # node --test: stroke model, undo/redo, layers, view math, palm rejection (no dependencies)
+npm test                 # node --test: stroke model, pencil, tools, undo/redo, layers, ruler, view math, palm rejection
 uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots   # with the server running; uses Google Chrome
+uv run --with playwright python scripts/e2e_layers_ruler.py http://127.0.0.1:8430/ docs/screenshots
+uv run --with playwright python scripts/e2e_pencil.py http://127.0.0.1:8430/ docs/screenshots
 ```
 
 Layout: `src/drawing_room/` (server, scoring, references, coach), `src/drawing_room/static/` (HTML/CSS/ES modules, no

@@ -104,7 +104,12 @@ def reference_mask(reference: Reference | Image.Image) -> tuple[np.ndarray, str]
 # ---------------------------------------------------------------- user ink
 
 def is_scored(stroke: dict) -> bool:
-    """Whether a stroke counts: its layer's `scored` flag, or for older clients, a Sketch or Line stroke."""
+    """Whether a stroke counts: its layer's `scored` flag, or for older clients, a Sketch or Line stroke.
+
+    Shading (`shade`) is tone, not line, so it never counts: a broad pencil band would read as misses.
+    """
+    if stroke.get("shade") is True:
+        return False
     scored = stroke.get("scored")
     if isinstance(scored, bool):
         return scored

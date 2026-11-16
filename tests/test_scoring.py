@@ -82,6 +82,14 @@ def test_the_layer_scored_flag_wins_over_the_layer_name():
     assert scoring.stroke_stats([custom, muted])["stroke_count"] == 1
 
 
+def test_shading_never_counts_even_on_a_scored_layer():
+    line = {**ellipse_stroke(layer="line"), "scored": True}
+    shading = {**ellipse_stroke(layer="line"), "scored": True, "shade": True}
+    assert scoring.score(BUILTINS["circle"], [shading], 1)["shape"] == 0
+    assert scoring.score(BUILTINS["circle"], [line, shading], 1)["shape"] == 10
+    assert scoring.stroke_stats([line, shading])["stroke_count"] == 1
+
+
 def test_line_art_extraction_handles_transparency_and_thick_lines():
     image = Image.new("RGBA", (400, 300), (0, 0, 0, 0))
     ImageDraw.Draw(image).line([(50, 150), (350, 150)], fill=(0, 0, 0, 255), width=12)
