@@ -1,0 +1,8 @@
+{
+  "name": "drawing-room-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test js-tests/*.test.js"
+  }
+}

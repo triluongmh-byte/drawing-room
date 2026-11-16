@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "drawing-room"
+version = "0.1.0"
+description = "A local drawing practice room with pressure strokes, references, deterministic scoring and a Claude coach."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "numpy>=1.26,<3",
+    "scipy>=1.11",
+    "pillow>=10",
+]
+
+[project.optional-dependencies]
+api = ["anthropic>=1.0"]
+
+[project.scripts]
+drawing-room = "drawing_room.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/drawing_room"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
