@@ -37,7 +37,7 @@ def line(a, b, n=40):
     return [[a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n] for i in range(n + 1)]
 
 def strokes_count(page):
-    return page.evaluate("() => Object.values(window.drawingRoom.state.history.doc.layers).reduce((a, l) => a + l.length, 0)")
+    return page.evaluate("() => window.drawingRoom.state.history.doc.layers.reduce((a, l) => a + l.strokes.length, 0)")
 
 def score_text(page):
     return page.inner_text("#score-shape"), page.inner_text("#score-proportion"), page.inner_text("#score-detail")
