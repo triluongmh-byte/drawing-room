@@ -2,7 +2,7 @@
 
 Needs a running server on port 8430 and Google Chrome. Run:
     uv run drawing-room serve &
-    uv run --with playwright python scripts/e2e_browser.py docs/screenshots
+    uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots
 """
 import json, math, sys, time
 from playwright.sync_api import sync_playwright
@@ -59,9 +59,9 @@ with sync_playwright() as p:
     page.select_option("#reference", "line")
     page.wait_for_timeout(300)
     page.evaluate(DRAW, {"points": line((252, 468), (748, 293)), "type": "pen", "id": 1})
-    page.click("#score-button")
+    # Drills score themselves after each stroke: no button press.
     page.wait_for_function("() => document.getElementById('score-shape').textContent !== '–'")
-    print("level0 line:", score_text(page))
+    print("level0 line (auto-scored):", score_text(page))
     page.screenshot(path=f"{OUT}/01-level0-line-drill.png")
 
     # Level 1, cube: guided steps; draw the front face only and watch the guide move to step 2.
@@ -122,6 +122,44 @@ with sync_playwright() as p:
     page.wait_for_function("() => document.getElementById('score-shape').textContent !== '–'")
     print("level3 squashed:", score_text(page))
     page.screenshot(path=f"{OUT}/05-level3-squashed.png")
+
+    # Level 4: coach stays silent until Submit, then scores and reviews.
+    page.evaluate("() => { window.drawingRoom.state.history.clear(); }")
+    page.keyboard.press("0")
+    page.select_option("#level", "4")
+    page.select_option("#reference", "cylinder")
+    page.wait_for_timeout(300)
+    assert page.is_disabled("#ask-button")
+    cyl = ellipse(500, 185, 170, 60) + line((330, 185), (330, 565)) + ellipse(500, 565, 170, 60, n=60)[:31] + line((670, 565), (670, 185))
+    page.evaluate(DRAW, {"points": [[x * 0.8 + 120, y * 0.8 + 60] for x, y in cyl], "type": "pen", "id": 6})
+    page.click("#submit-button")
+    page.wait_for_function("() => !document.querySelector('#coach-reply .thinking') && document.getElementById('score-shape').textContent !== '–'", timeout=300000)
+    print("level4 submit:", score_text(page))
+    print("level4 review:", page.inner_text("#coach-reply"))
+    page.screenshot(path=f"{OUT}/07-level4-submit-review.png")
+
+    # Upload a transparent PNG of a square outline and trace it at level 2.
+    from PIL import Image, ImageDraw
+    import tempfile, os
+    upload = os.path.join(tempfile.mkdtemp(), "square.png")
+    img = Image.new("RGBA", (400, 300), (0, 0, 0, 0))
+    ImageDraw.Draw(img).rectangle([100, 50, 300, 250], outline=(0, 0, 0, 255), width=6)
+    img.save(upload)
+    page.evaluate("() => { window.drawingRoom.state.history.clear(); }")
+    page.select_option("#level", "2")
+    page.set_input_files("#upload", upload)
+    page.wait_for_function("() => window.drawingRoom.state.reference && window.drawingRoom.state.reference.kind === 'upload'")
+    page.wait_for_timeout(300)
+    # The 400x300 upload is letterboxed onto the 1000x750 paper at 2.5x: the square spans 250..750 by 125..625.
+    sq = [[250, 125], [750, 125], [750, 625], [250, 625], [250, 125]]
+    pts = []
+    for a, b in zip(sq, sq[1:]):
+        pts += line(a, b, 40)
+    page.evaluate(DRAW, {"points": pts, "type": "pen", "id": 7})
+    page.click("#score-button")
+    page.wait_for_function("() => document.getElementById('score-shape').textContent !== '–'")
+    print("upload square:", score_text(page))
+    page.screenshot(path=f"{OUT}/08-upload-traced.png")
 
     # Undo via keyboard, zoom via wheel, rotate.
     n = strokes_count(page)

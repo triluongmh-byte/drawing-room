@@ -77,7 +77,7 @@ coordinates. With `ANTHROPIC_API_KEY` set (and `anthropic` installed) it calls t
 ```bash
 uv run pytest            # scoring, server, PIN/Origin, logging, coach prompt (claude mocked)
 npm test                 # node --test: stroke model, undo/redo, layers, view math, palm rejection (no dependencies)
-uv run --with playwright python scripts/e2e_browser.py docs/screenshots   # with the server running; uses Google Chrome
+uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots   # with the server running; uses Google Chrome
 ```
 
 Layout: `src/drawing_room/` (server, scoring, references, coach), `src/drawing_room/static/` (HTML/CSS/ES modules, no
