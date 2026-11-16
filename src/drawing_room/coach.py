@@ -21,7 +21,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from drawing_room.references import PAPER_H, PAPER_W, png_bytes
-from drawing_room.scoring import SCORED_LAYERS, Transform
+from drawing_room.scoring import Transform, is_scored
 
 COACH_TIMEOUT = 240
 API_MODEL = "claude-opus-5-5"
@@ -62,7 +62,7 @@ def overlay(reference: Image.Image, strokes: list[dict], result: dict) -> Image.
     image.paste(red, mask=mask)
     draw = ImageDraw.Draw(image)
     for stroke in strokes or []:
-        if stroke.get("layer") not in SCORED_LAYERS:
+        if not is_scored(stroke):
             continue
         points = [transform.forward(float(p[0]), float(p[1])) for p in stroke.get("points", []) if len(p) >= 2]
         if len(points) == 1:
