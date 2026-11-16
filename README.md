@@ -15,16 +15,25 @@ Needs Python 3.11/3.12 and [uv](https://docs.astral.sh/uv/). The coach uses the 
 ```bash
 uv sync
 uv run drawing-room serve            # http://127.0.0.1:8430 on this Mac only
-uv run drawing-room serve --lan      # also on your Wi-Fi, for the iPad; prints the address and a 6-digit PIN
-uv run drawing-room serve --port 9000
+uv run drawing-room serve --lan      # also on your Wi-Fi, for the iPad; prints the address
+uv run drawing-room serve --lan --pin   # on a shared network: also asks for a 6-digit PIN printed at start-up
+uv run drawing-room serve --port 9000 --data ~/drawings   # projects live in ~/.drawing-room/projects by default
 ```
 
-On the iPad, open the printed `http://<mac-ip>:8430` address in Safari and enter the PIN once (it is kept in a cookie).
+On the iPad, open the printed `http://<mac-ip>:8430` address in Safari.
 All JavaScript is served by the Mac, so the iPad needs no internet; the coach needs the Mac to reach Claude.
 
 ## What you can do
 
-- **Paper**: pencil, shade, ink, color brush and an eraser that removes whole strokes. Every tool works on the active
+- **Projects** (🗂 at the top left): every drawing is a project kept on the Mac, so the iPad and the Mac open the same
+  work. New (named straight away), open any project from the list, rename it, or delete it. Changes save themselves
+  about a second after you stop, and a copy kept in the browser covers a reload or a closed tab before that. A drawing
+  from before projects becomes "My first drawing".
+
+  ![Projects menu](docs/screenshots/13-projects.png)
+- **Paper**: white across the whole drawing area. The faint frame is the reference and scoring area; at levels 3–4
+  you can draw anywhere, since size and position are ignored.
+- **Tools**: pencil, shade, ink, color brush and an eraser that removes whole strokes. Every tool works on the active
   layer and keeps its own size and colour (the slider and swatch next to the tools; `[` / `]` change the size). Strokes follow pen pressure (via vendored
   [perfect-freehand](https://github.com/steveruizok/perfect-freehand), MIT) and are stored as vectors: every point keeps
   x, y, pressure, time and tilt, so drawings can be replayed and analysed. Undo/redo (⌘Z / ⇧⌘Z).
@@ -83,11 +92,13 @@ coordinates. With `ANTHROPIC_API_KEY` set (and `anthropic` installed) it calls t
 ## Security
 
 - Binds to 127.0.0.1 by default and rejects foreign Host and Origin headers.
-- `--lan` binds 0.0.0.0 and requires the PIN for every `/api` route (HttpOnly, SameSite=Strict cookie; wrong PINs are
-  rate limited). Origin must still match Host.
+- `--lan` binds 0.0.0.0 and answers only devices on the local network: loopback, private and link-local addresses, or
+  the same /16 as one of the Mac's own addresses (for home networks on public-looking ranges). Origin must still match
+  Host. `--pin` adds a PIN for every `/api` route (HttpOnly, SameSite=Strict cookie; wrong PINs are rate limited).
+- Project ids are made by the server and checked against a strict pattern before they are used in a file name.
 - Request bodies are capped (16 MB, 3000 strokes, 300k points).
 - Every POST logs request, response and error in a `finally` block; set `DRAWING_ROOM_GRAYLOG=host:port` to send them
-  to Graylog as GELF over UDP. PINs and image data are redacted.
+  to Graylog as GELF over UDP. PINs and image data are redacted, and strokes (also inside project saves) are summarised.
 
 ## Development
 
@@ -97,6 +108,8 @@ npm test                 # node --test: stroke model, pencil, tools, undo/redo, 
 uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots   # with the server running; uses Google Chrome
 uv run --with playwright python scripts/e2e_layers_ruler.py http://127.0.0.1:8430/ docs/screenshots
 uv run --with playwright python scripts/e2e_pencil.py http://127.0.0.1:8430/ docs/screenshots
+# The browser checks write projects: run each against a server with an empty data dir, never your real one:
+#   uv run drawing-room serve --port 8431 --data "$(mktemp -d)" &
 ```
 
 Layout: `src/drawing_room/` (server, scoring, references, coach), `src/drawing_room/static/` (HTML/CSS/ES modules, no

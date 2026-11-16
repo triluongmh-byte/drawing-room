@@ -11,6 +11,12 @@
 </head>
 <body>
   <header class="toolbar" role="toolbar" aria-label="Drawing tools">
+    <div class="project">
+      <button id="project-button" class="project-button" aria-haspopup="true" aria-expanded="false" title="Projects">
+        <span class="project-icon" aria-hidden="true">🗂</span><span id="project-name" class="project-name">…</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <span id="project-status" class="project-status" aria-live="polite"></span>
+    </div>
     <select id="level" class="level" aria-label="Level" title="Level: how much help you get">
       <option value="0">0 · Warm-up drills</option>
       <option value="1" selected>1 · Trace, guided</option>
@@ -128,6 +134,15 @@
       </section>
     </aside>
   </main>
+
+  <div class="project-menu" id="project-menu" role="dialog" aria-label="Projects" hidden>
+    <div class="project-menu-head">
+      <input id="project-rename" maxlength="60" aria-label="Project name" title="Rename this project: type and press Enter">
+      <button id="project-delete" class="danger" title="Delete this project" aria-label="Delete project">🗑</button>
+    </div>
+    <button id="project-new" class="primary project-new">＋ New project</button>
+    <ul class="project-list" id="project-list"></ul>
+  </div>
 
   <div class="pin-overlay" id="pin-overlay" hidden>
     <form class="pin-box" id="pin-form">

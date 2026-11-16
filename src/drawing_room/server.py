@@ -2,12 +2,14 @@
 
 By default it binds to localhost only and refuses requests from other sites (Host and Origin checks), because the
 coach runs the local ``claude`` command. With ``--lan`` it listens on every interface so an iPad on the same Wi-Fi can
-use it; then every /api route needs a 6-digit PIN printed at start-up, remembered in a cookie.
+use it, but only answers devices on the local network (private addresses, or the same /16 as this machine).
+``--pin`` adds a 6-digit PIN printed at start-up, remembered in a cookie, for networks you share with others.
 """
 
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -22,6 +24,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from drawing_room import coach as coach_module
 from drawing_room import scoring
+from drawing_room.projects import DEFAULT_DATA, ProjectError, ProjectStore
 from drawing_room.references import BUILTINS, decode_data_url, png_bytes, render
 
 logger = logging.getLogger("drawing_room.web")
@@ -63,9 +66,21 @@ def redact(request):
         clean["reference"] = {**reference, "image": f"<{len(reference['image'])} chars>"}
     strokes = clean.get("strokes")
     if isinstance(strokes, list):
-        clean["strokes"] = {"count": len(strokes),
-                            "points": sum(len(s.get("points", [])) for s in strokes if isinstance(s, dict))}
+        clean["strokes"] = summarise_strokes(strokes)
+    drawing = clean.get("drawing")
+    if isinstance(drawing, dict):
+        # A project save: keep the shape of the drawing, not its strokes or image data.
+        layers = drawing.get("layers") if isinstance(drawing.get("layers"), list) else []
+        every = [s for layer in layers if isinstance(layer, dict) and isinstance(layer.get("strokes"), list)
+                 for s in layer["strokes"]]
+        clean["drawing"] = {**{k: v for k, v in drawing.items() if k not in ("layers", "reference")},
+                            "layers": len(layers), "strokes": summarise_strokes(every),
+                            "reference": redact({"reference": drawing.get("reference")})["reference"]}
     return clean
+
+
+def summarise_strokes(strokes: list) -> dict:
+    return {"count": len(strokes), "points": sum(len(s.get("points", [])) for s in strokes if isinstance(s, dict))}
 
 
 def log_post(path: str, request, response, error) -> None:
@@ -79,6 +94,28 @@ def log_post(path: str, request, response, error) -> None:
             send_gelf(address, payload)
         except (OSError, ValueError) as failure:
             logger.warning("could not reach Graylog: %s", failure)
+
+
+# ---------------------------------------------------------------- who may connect
+
+def local_network_client(client: str, own_addresses: list[str]) -> bool:
+    """Whether a LAN-mode client looks like a device on this network: loopback, a private or link-local address,
+    or the same /16 as one of this machine's own addresses (some home networks use public-looking ranges)."""
+    try:
+        address = ipaddress.ip_address(client.split("%")[0])
+    except ValueError:
+        return False
+    if address.version == 6 and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    if address.is_loopback or address.is_private or address.is_link_local:
+        return True
+    for own in own_addresses:
+        try:
+            if address in ipaddress.ip_network(f"{own}/16", strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 # ---------------------------------------------------------------- PIN
@@ -170,8 +207,10 @@ def parse_reference(request: dict):
 class App:
     """What the handler needs; tests swap the coach runner."""
 
-    def __init__(self, gate: PinGate | None = None, coach_runner=None, coach_api_client=None):
+    def __init__(self, gate: PinGate | None = None, coach_runner=None, coach_api_client=None,
+                 projects: ProjectStore | None = None):
         self.gate = gate
+        self.projects = projects or ProjectStore(DEFAULT_DATA)
         self.coach_runner = coach_runner
         self.coach_api_client = coach_api_client
 
@@ -199,8 +238,12 @@ class App:
         return {**answer, "score": result}
 
 
-def make_handler(app: App, allowed_hosts: set[str] | None):
-    """``allowed_hosts`` None means any Host (LAN mode, guarded by the PIN); Origin must still match Host."""
+PROJECT_ROUTE = re.compile(r"/api/projects/([0-9a-f]{12})(?:/(save|rename|delete))?")
+
+
+def make_handler(app: App, allowed_hosts: set[str] | None, own_addresses: list[str] | None = None):
+    """``allowed_hosts`` None means any Host (LAN mode); Origin must still match Host. In LAN mode
+    ``own_addresses`` (this machine's addresses) decide which clients count as local."""
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "drawing-room"
@@ -223,6 +266,8 @@ def make_handler(app: App, allowed_hosts: set[str] | None):
             self._send(code, json.dumps(value, ensure_ascii=False).encode(), "application/json; charset=utf-8", headers)
 
         def _trusted(self) -> bool:
+            if own_addresses is not None and not local_network_client(self.client_address[0], own_addresses):
+                return False
             host = self.headers.get("Host", "")
             if allowed_hosts is not None and host not in allowed_hosts:
                 return False
@@ -254,6 +299,14 @@ def make_handler(app: App, allowed_hosts: set[str] | None):
                                         "paper": [scoring.PAPER_W, scoring.PAPER_H]})
             if path == "/api/references":
                 return self._json(200, {"references": [ref.meta() for ref in BUILTINS.values()]})
+            if path == "/api/projects":
+                return self._json(200, {"projects": app.projects.list()})
+            found = PROJECT_ROUTE.fullmatch(path)
+            if found and not found.group(2):
+                try:
+                    return self._json(200, app.projects.get(found.group(1)))
+                except ProjectError as problem:
+                    return self._json(problem.code, {"error": str(problem)})
             found = re.fullmatch(r"/api/references/([a-z]+)\.png", path)
             if found:
                 ref = BUILTINS.get(found.group(1))
@@ -283,6 +336,16 @@ def make_handler(app: App, allowed_hosts: set[str] | None):
                 return 200, app.score(request), {}
             if self.path == "/api/coach":
                 return 200, app.coach(request), {}
+            if self.path == "/api/projects":
+                return 200, {"project": app.projects.create(request.get("name"), request.get("drawing"))}, {}
+            found = PROJECT_ROUTE.fullmatch(self.path)
+            if found and found.group(2) == "save":
+                return 200, {"project": app.projects.save(found.group(1), request.get("drawing"))}, {}
+            if found and found.group(2) == "rename":
+                return 200, {"project": app.projects.rename(found.group(1), request.get("name"))}, {}
+            if found and found.group(2) == "delete":
+                app.projects.delete(found.group(1))
+                return 200, {"ok": True}, {}
             return 404, {"error": "not found"}, {}
 
         def do_POST(self):
@@ -306,7 +369,7 @@ def make_handler(app: App, allowed_hosts: set[str] | None):
                 if not isinstance(request, dict):
                     raise ValueError("the body must be a JSON object")
                 code, response, headers = self._route_post(request)
-            except ApiError as problem:
+            except (ApiError, ProjectError) as problem:
                 error, code, response = str(problem), problem.code, {"error": str(problem)}
             except ValueError as bad:
                 error, code, response = str(bad), 400, {"error": "invalid request"}
@@ -338,28 +401,31 @@ def lan_addresses() -> list[str]:
     return found
 
 
-def create_server(port: int = DEFAULT_PORT, lan: bool = False, app: App | None = None) -> ThreadingHTTPServer:
-    """Pass port 0 to take any free port. In LAN mode the app gets a PIN gate if it has none."""
-    app = app or App()
-    if lan and app.gate is None:
+def create_server(port: int = DEFAULT_PORT, lan: bool = False, app: App | None = None, pin: bool = False,
+                  data: Path | str | None = None) -> ThreadingHTTPServer:
+    """Pass port 0 to take any free port. ``pin`` gives the app a PIN gate if it has none."""
+    app = app or App(projects=ProjectStore(data or DEFAULT_DATA))
+    if pin and app.gate is None:
         app.gate = PinGate()
     server = ThreadingHTTPServer(("0.0.0.0" if lan else "127.0.0.1", port), None)
     actual = server.server_address[1]
     hosts = None if lan else {f"127.0.0.1:{actual}", f"localhost:{actual}"}
-    server.RequestHandlerClass = make_handler(app, hosts)
+    server.RequestHandlerClass = make_handler(app, hosts, lan_addresses() if lan else None)
     server.app = app
     return server
 
 
-def serve(port: int = DEFAULT_PORT, lan: bool = False) -> None:
+def serve(port: int = DEFAULT_PORT, lan: bool = False, pin: bool = False, data: Path | str | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    server = create_server(port, lan)
+    server = create_server(port, lan, pin=pin, data=data)
     actual = server.server_address[1]
     print(f"drawing-room: http://127.0.0.1:{actual}", flush=True)
     if lan:
         for address in lan_addresses():
             print(f"  on your Wi-Fi: http://{address}:{actual}", flush=True)
+    if server.app.gate:
         print(f"  PIN: {server.app.gate.pin}", flush=True)
+    print(f"  projects: {server.app.projects.root}", flush=True)
     route = "Messages API" if coach_module.use_api() else "claude command line"
     print(f"  coach: {route}", flush=True)
     try:
