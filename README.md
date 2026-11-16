@@ -24,11 +24,19 @@ All JavaScript is served by the Mac, so the iPad needs no internet; the coach ne
 
 ## What you can do
 
-- **Paper**: pencil (Sketch layer), ink (Line layer), color brush with a color picker (Color layer), and an eraser that
-  removes whole strokes on the active layer. Strokes follow pen pressure (via vendored
+- **Paper**: pencil, ink, color brush with a color picker, and an eraser that removes whole strokes. Every tool works on
+  the active layer. Strokes follow pen pressure (via vendored
   [perfect-freehand](https://github.com/steveruizok/perfect-freehand), MIT) and are stored as vectors: every point keeps
   x, y, pressure, time and tilt, so drawings can be replayed and analysed. Undo/redo (⌘Z / ⇧⌘Z).
-- **Layers**, bottom to top: Reference (underlay with an opacity slider), Sketch, Line, Color — each can be hidden.
+- **Layers**, like a paint program. A new drawing starts with Sketch, Line and Color; add up to 24 (＋ or ⇧N), and a
+  new layer opens with its name field ready to type. Tap a layer to draw on it, tap the active layer's name to rename it.
+  Each layer can be hidden (👁), locked (🔒, takes no strokes and no erasing), set to its own opacity, moved up or down,
+  cleared on its own, or deleted. Adding, deleting, moving and renaming are undoable like strokes. ★ marks the layers
+  that count towards the score (Color is off by default). The reference image sits under the stack with its own
+  opacity slider. Old v0 drawings are upgraded on load.
+- **Ruler** (📏 or L, levels 1–4): a straightedge on the paper. Start a stroke against it and the whole stroke lands on
+  its edge. Drag an end to turn it (snaps to 15° steps; hold ⌥ for any angle), drag the ⊕ in the middle to move it, or
+  type an exact angle next to the button. The angle is shown on the ruler. It is not offered in the warm-up drills.
 - **View**: two fingers pan, pinch-zoom and twist-rotate on the iPad; space-drag to pan, wheel or trackpad pinch to zoom,
   Alt+wheel or R / ⇧R to rotate, 0 to fit on the Mac.
 - **Palm rejection**: once a pen has touched the paper, fingers never draw; they only move the paper.
@@ -48,7 +56,7 @@ All JavaScript is served by the Mac, so the iPad needs no internet; the coach ne
 
 1. Reference lines: built-ins are rendered from their vectors; uploaded line art is thresholded; photos go through
    edge detection (best effort). Thick lines are thinned to a centre line.
-2. Your Sketch and Line strokes are rasterised at a constant thin width (pressure does not change the score).
+2. Your strokes on visible ★ layers are rasterised at a constant thin width (pressure does not change the score).
 3. Levels 3–4 first move and uniformly scale your ink onto the reference (centroid and spread; never rotation).
 4. A distance transform gives *recall* (share of the reference with your ink nearby) and *precision* (share of your ink
    near the reference), with a few pixels of full credit fading to zero a little further out.
