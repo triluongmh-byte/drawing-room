@@ -8,6 +8,7 @@ import {
   restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
 } from "./layers.js";
 import { settlePencil } from "./pencil.js";
+import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
 import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
 import { createRuler, dragEnd, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeHits } from "./strokes.js";
@@ -16,7 +17,12 @@ import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoom
 
 const PAPER_W = 1000;
 const PAPER_H = 750;
-const STORAGE_KEY = "drawing-room:v0";
+const LEGACY_KEY = "drawing-room:v0"; // the single drawing kept in this browser before projects
+const MIGRATED_KEY = "drawing-room:v0-migrated";
+const DEVICE_KEY = "drawing-room:device"; // per device: the open project and each tool's size and colour
+// Changes not yet on the server: written on every change, cleared once saved, so closing or reloading the
+// page right after a stroke loses nothing. `base` is the server version the changes were made on.
+const DRAFT_KEY = "drawing-room:draft";
 const RULER_REACH = 28; // screen pixels: a stroke starting this close to the ruler follows it
 const HANDLE_RADIUS = 16; // screen pixels
 const LEVELS = {
@@ -42,6 +48,11 @@ const state = {
   underlay: null, // HTMLImageElement drawn on the paper
   tool: "pencil",
   tools: restoreToolSettings(), // tool -> { size, color }
+  project: null, // { id, name, created, updated, strokes } of the open project
+  projects: null, // the project list, as last fetched
+  loading: false, // while a project is being put into the room: changes are not saves
+  savedReference: null, // the reference as last sent to the server
+  draftVersion: 0, // counts changes, to know whether a finished save covered the latest one
   underlayState: createReferenceState(),
   history: new History(createDocument()),
   activeLayer: "sketch",
@@ -64,30 +75,220 @@ const state = {
 
 // ------------------------------------------------------------------ persistence (per browser, best effort)
 
-function save() {
+/** The open project's drawing, as saved on the server. The reference is left out unless it changed. */
+function drawingPayload({ withReference = true } = {}) {
+  const reference = state.reference ? { ...state.reference, meta: undefined } : null;
+  return {
+    level: state.level, ...serializeDocument(state.history.doc), active: state.activeLayer,
+    rulerOn: state.rulerOn, ruler: state.ruler, underlayOpacity: state.underlayState.opacity,
+    ...(withReference ? { reference } : {}),
+  };
+}
+
+const saver = createSaver(async () => {
+  const id = state.project?.id;
+  if (!id) return;
+  const withReference = state.reference !== state.savedReference;
+  const reference = state.reference;
+  const version = state.draftVersion;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      level: state.level, reference: state.reference, ...serializeDocument(state.history.doc), active: state.activeLayer,
-      rulerOn: state.rulerOn, ruler: state.ruler, underlayOpacity: state.underlayState.opacity,
-      tools: state.tools, tool: state.tool,
-    }));
+    const { project } = await postJSON(`/api/projects/${id}/save`, { drawing: drawingPayload({ withReference }) });
+    if (withReference) state.savedReference = reference;
+    if (state.project?.id === project.id) state.project = project;
+    if (state.draftVersion === version) clearDraft(); // nothing changed while saving
+    $("project-status").textContent = "";
+  } catch (error) {
+    $("project-status").textContent = "not saved";
+    $("project-status").title = `Could not save: ${error.message}. It will try again on the next change.`;
+    throw error;
+  }
+});
+
+function saveDevice() {
+  try {
+    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool }));
   } catch { /* private mode or full storage: drawing still works */ }
 }
 
-function load() {
+function loadDevice() {
+  try { return JSON.parse(localStorage.getItem(DEVICE_KEY) || "null") ?? {}; } catch { return {}; }
+}
+
+function readDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* fine */ }
+}
+
+function writeDraft() {
+  state.draftVersion += 1;
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (!saved) return null;
-    state.history = new History(restoreDocument(saved));
-    state.activeLayer = typeof saved.active === "string" ? saved.active : "sketch";
-    ensureActiveLayer();
-    state.ruler = restoreRuler(saved.ruler) ?? state.ruler;
-    state.rulerOn = saved.rulerOn === true;
-    state.tools = restoreToolSettings(saved.tools);
-    setReferenceOpacity(state.underlayState, saved.underlayOpacity ?? state.underlayState.opacity);
-    $("opacity").value = String(state.underlayState.opacity);
-    return saved;
-  } catch { return null; }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      id: state.project.id, base: state.project.updated,
+      drawing: drawingPayload({ withReference: state.reference?.kind !== "upload" }),
+    }));
+  } catch { /* too big for local storage (a large upload): the server save still runs */ }
+}
+
+/** Something changed: remember this device's settings now and save the project shortly. */
+function save() {
+  saveDevice();
+  if (state.loading || !state.project) return;
+  writeDraft();
+  saver.touch();
+}
+
+/** Put a saved drawing (a project's, or the old single drawing) into the room. */
+function applyDrawing(saved) {
+  state.history = new History(restoreDocument(saved));
+  state.activeLayer = typeof saved?.active === "string" ? saved.active : "sketch";
+  ensureActiveLayer();
+  state.ruler = restoreRuler(saved?.ruler) ?? createRuler(PAPER_W / 2, PAPER_H / 2, 600, 0);
+  state.rulerOn = saved?.rulerOn === true;
+  state.underlayState = createReferenceState();
+  setReferenceOpacity(state.underlayState, saved?.underlayOpacity ?? state.underlayState.opacity);
+  $("opacity").value = String(state.underlayState.opacity);
+  state.reference = null;
+  if (saved?.reference?.kind === "upload" && saved.reference.dataUrl) state.reference = saved.reference;
+  else if (saved?.reference?.kind === "builtin") {
+    const meta = state.references.find((ref) => ref.id === saved.reference.id);
+    if (meta) state.reference = { kind: "builtin", id: meta.id, name: meta.name, meta };
+  }
+  state.savedReference = state.reference;
+  state.marks = [];
+  state.current = null;
+  state.erasing = null;
+  const level = Number.isInteger(saved?.level) && LEVELS[saved.level] ? saved.level : 1;
+  $("level").value = String(level);
+  setLevel(level);
+  renderLayers();
+  fit();
+}
+
+// ------------------------------------------------------------------ projects
+
+async function refreshProjects() {
+  const { projects } = await getJSON("/api/projects");
+  state.projects = projects;
+  return projects;
+}
+
+async function openProject(id) {
+  await saver.flush().catch(() => {});
+  const { project, drawing } = await getJSON(`/api/projects/${id}`);
+  // Unsaved changes from last time, made on the version the server still has: put them back and save them.
+  const draft = readDraft();
+  const recovered = draft?.id === project.id && draft.base === project.updated && draft.drawing;
+  state.loading = true;
+  try {
+    state.project = project;
+    applyDrawing(recovered ? { ...drawing, ...draft.drawing } : drawing);
+  } finally {
+    state.loading = false;
+  }
+  if (draft?.id === project.id && !recovered) clearDraft(); // made on an older version: the server has moved on
+  if (recovered) { state.savedReference = undefined; save(); }
+  saveDevice();
+  renderProjectButton();
+}
+
+async function newProject({ name, drawing = null } = {}) {
+  await saver.flush().catch(() => {});
+  const projects = state.projects ?? await refreshProjects();
+  const fresh = drawing ?? { level: state.level, reference: state.reference ? { ...state.reference, meta: undefined } : null };
+  const { project } = await postJSON("/api/projects", { name: name ?? nextProjectName(projects), drawing: fresh });
+  await refreshProjects();
+  await openProject(project.id);
+  return project;
+}
+
+async function renameProject(name) {
+  if (!state.project) return;
+  const { project } = await postJSON(`/api/projects/${state.project.id}/rename`, { name });
+  state.project = project;
+  await refreshProjects();
+  renderProjectButton();
+}
+
+async function deleteProject() {
+  const project = state.project;
+  if (!project || !confirm(`Delete “${project.name}” and everything drawn in it? This cannot be undone.`)) return;
+  saver.cancel();
+  await postJSON(`/api/projects/${project.id}/delete`, {});
+  state.project = null;
+  const projects = await refreshProjects();
+  if (projects.length) await openProject(projects[0].id);
+  else await newProject();
+  flash(`Deleted “${project.name}”.`);
+}
+
+function renderProjectButton() {
+  $("project-name").textContent = state.project?.name ?? "…";
+  $("project-button").title = state.project ? `Project: ${state.project.name}. New, open, rename or delete.` : "Projects";
+}
+
+/** The project menu: the list (tap to open), with New, and Rename and Delete for the open project. */
+function renderProjectMenu() {
+  const list = $("project-list");
+  list.innerHTML = "";
+  for (const project of state.projects ?? []) {
+    const item = document.createElement("li");
+    const open = project.id === state.project?.id;
+    item.classList.toggle("active", open);
+    item.dataset.project = project.id;
+    const name = Object.assign(document.createElement("span"), { className: "name", textContent: project.name });
+    const info = Object.assign(document.createElement("span"), {
+      className: "info", textContent: `${project.strokes} stroke${project.strokes === 1 ? "" : "s"} · ${relativeTime(project.updated)}`,
+    });
+    item.append(name, info);
+    item.addEventListener("click", async () => {
+      if (!open) { closeProjectMenu(); await openProject(project.id).catch((e) => flash(e.message)); }
+    });
+    list.append(item);
+  }
+  $("project-rename").value = state.project?.name ?? "";
+}
+
+async function toggleProjectMenu() {
+  const menu = $("project-menu");
+  if (!menu.hidden) return closeProjectMenu();
+  await saver.flush().catch(() => {});
+  await refreshProjects().catch(() => {});
+  renderProjectMenu();
+  menu.hidden = false;
+  $("project-button").setAttribute("aria-expanded", "true");
+}
+
+function closeProjectMenu() {
+  $("project-menu").hidden = true;
+  $("project-button").setAttribute("aria-expanded", "false");
+}
+
+/** Start-up: open the device's last project, bringing over a drawing made before projects existed. */
+async function startProjects() {
+  const device = loadDevice();
+  let projects = await refreshProjects();
+  let legacy = null;
+  try {
+    if (!localStorage.getItem(MIGRATED_KEY)) legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || "null");
+  } catch { legacy = null; }
+  state.tools = restoreToolSettings(device.tools ?? legacy?.tools);
+  let openId = projects.some((p) => p.id === device.project) ? device.project : projects[0]?.id;
+  if (legacy && (hasStrokes(legacy) || !projects.length)) {
+    const { project } = await postJSON("/api/projects", { name: hasStrokes(legacy) ? "My first drawing" : "Drawing 1", drawing: legacy });
+    projects = await refreshProjects();
+    openId = project.id;
+  } else if (!projects.length) {
+    const { project } = await postJSON("/api/projects", { name: "Drawing 1", drawing: { level: 1 } });
+    projects = await refreshProjects();
+    openId = project.id;
+  }
+  try { localStorage.setItem(MIGRATED_KEY, "1"); } catch { /* fine */ }
+  await openProject(openId);
+  setTool(device.tool ?? legacy?.tool ?? "pencil");
+  saveDevice();
 }
 
 // ------------------------------------------------------------------ layers
@@ -245,22 +446,17 @@ function render() {
   state.dirty = false;
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // The paper is the whole drawing area. The reference and scoring frame (PAPER_W x PAPER_H) sits in it.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   const { x, y, scale, rotation } = state.view;
   const c = Math.cos(rotation) * scale, s = Math.sin(rotation) * scale;
   ctx.setTransform(dpr * c, dpr * s, -dpr * s, dpr * c, dpr * x, dpr * y);
 
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.18)";
-  ctx.shadowBlur = 12;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, PAPER_W, PAPER_H);
-  ctx.restore();
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, PAPER_W, PAPER_H);
-  ctx.clip();
+  ctx.strokeStyle = "rgba(60, 50, 40, 0.14)";
+  ctx.lineWidth = 1 / scale;
+  ctx.strokeRect(0, 0, PAPER_W, PAPER_H);
   if (referenceVisible(state.underlayState) && state.underlay?.complete && state.underlay.naturalWidth) {
     ctx.globalAlpha = state.underlayState.opacity;
     ctx.drawImage(state.underlay, 0, 0, PAPER_W, PAPER_H);
@@ -971,8 +1167,39 @@ function wire() {
   $("ask-button").addEventListener("click", () => askCoach($("question").value));
   $("pin-form").addEventListener("submit", sendPin);
 
+  $("project-button").addEventListener("click", () => toggleProjectMenu().catch((e) => flash(e.message)));
+  $("project-new").addEventListener("click", async () => {
+    closeProjectMenu();
+    try {
+      await newProject();
+      // Straight into naming it, like a new layer.
+      await toggleProjectMenu();
+      $("project-rename").focus();
+      $("project-rename").select();
+    } catch (error) { flash(error.message); }
+  });
+  $("project-rename").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); $("project-rename").blur(); }
+    if (event.key === "Escape") { $("project-rename").value = state.project?.name ?? ""; $("project-rename").blur(); }
+  });
+  $("project-rename").addEventListener("change", async () => {
+    const name = $("project-rename").value.trim();
+    if (!name || name === state.project?.name) { $("project-rename").value = state.project?.name ?? ""; return; }
+    try { await renameProject(name); renderProjectMenu(); } catch (error) { flash(error.message); }
+  });
+  $("project-delete").addEventListener("click", async () => {
+    try { await deleteProject(); closeProjectMenu(); } catch (error) { flash(error.message); }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!$("project-menu").hidden && !event.target.closest("#project-menu, #project-button")) closeProjectMenu();
+  });
+  // Save before the page goes away (the iPad suspends background tabs).
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saver.flush().catch(() => {}); });
+  window.addEventListener("pagehide", () => { saver.flush().catch(() => {}); });
+
   window.addEventListener("keydown", (e) => {
     if (e.target.matches("textarea, input, select")) return;
+    if (e.key === "Escape" && !$("project-menu").hidden) { closeProjectMenu(); return; }
     const key = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && key === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); return; }
     if (e.metaKey || e.ctrlKey) return;
@@ -1003,20 +1230,14 @@ async function start() {
     $("coach-reply").textContent = `Could not reach the server: ${error.message}`;
     return;
   }
-  const saved = load();
-  if (saved?.reference?.kind === "upload" && saved.reference.dataUrl) state.reference = saved.reference;
-  else if (saved?.reference?.kind === "builtin") {
-    const meta = state.references.find((ref) => ref.id === saved.reference.id);
-    if (meta) state.reference = { kind: "builtin", id: meta.id, name: meta.name, meta };
+  try {
+    await startProjects();
+  } catch (error) {
+    $("coach-reply").textContent = `Could not open your projects: ${error.message}`;
   }
-  const level = Number.isInteger(saved?.level) ? saved.level : 1;
-  $("level").value = String(level);
-  setTool(saved?.tool ?? "pencil");
-  setLevel(level);
-  renderLayers();
 }
 
 // Exposed for end-to-end tests and debugging in the console.
-window.drawingRoom = { state, screenToPaper: (x, y) => screenToPaper(state.view, x, y), paperToScreen: (x, y) => paperToScreen(state.view, x, y) };
+window.drawingRoom = { state, flush: () => saver.flush(), screenToPaper: (x, y) => screenToPaper(state.view, x, y), paperToScreen: (x, y) => paperToScreen(state.view, x, y) };
 
 start();

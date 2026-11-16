@@ -132,3 +132,11 @@ def test_every_builtin_scores_ten_against_itself():
     for ref in BUILTINS.values():
         strokes = [{"layer": "line", "points": [list(p) for p in line]} for step in ref.steps for line in step.lines]
         assert scoring.score(ref, strokes, 1)["shape"] == 10, ref.id
+
+
+def test_a_drawing_beside_the_frame_still_scores_from_reference():
+    # The white paper reaches past the 1000x750 frame; at levels 3-4 position is ignored.
+    beside = ellipse_stroke(cx=1500, cy=375, rx=150, ry=150)
+    assert scoring.score(BUILTINS["circle"], [beside], 3)["shape"] >= 9
+    # When tracing (levels 1-2) ink outside the frame is simply not on the reference.
+    assert scoring.score(BUILTINS["circle"], [beside], 1)["shape"] == 0

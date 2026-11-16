@@ -55,6 +55,12 @@ class Transform:
     def inverse(self, x: float, y: float) -> tuple[float, float]:
         return (x - self.target[0]) / self.scale + self.source[0], (y - self.target[1]) / self.scale + self.source[1]
 
+    def then(self, after: "Transform") -> "Transform":
+        """This transform followed by ``after``, as one transform."""
+        return Transform(self.scale * after.scale, self.source,
+                         ((self.target[0] - after.source[0]) * after.scale + after.target[0],
+                          (self.target[1] - after.source[1]) * after.scale + after.target[1]))
+
     def as_dict(self) -> dict:
         return {"scale": round(self.scale, 4), "source": [round(v, 1) for v in self.source],
                 "target": [round(v, 1) for v in self.target]}
@@ -161,6 +167,20 @@ def moments(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
     return np.array([xs.mean(), ys.mean()]), np.array([xs.std(), ys.std()])
 
 
+def framing(points: list[list[tuple[float, float]]]) -> Transform:
+    """The paper reaches past the scoring frame. For a drawing made partly or wholly outside it, a transform that
+    brings it inside (centred, shrunk to fit if needed) so alignment can see it; the identity otherwise."""
+    xs = [x for stroke in points for x, _ in stroke]
+    ys = [y for stroke in points for _, y in stroke]
+    if not xs:
+        return Transform()
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    if x0 >= 0 and y0 >= 0 and x1 <= PAPER_W and y1 <= PAPER_H:
+        return Transform()
+    scale = min(1.0, 0.9 * PAPER_W / max(x1 - x0, 1e-6), 0.9 * PAPER_H / max(y1 - y0, 1e-6))
+    return Transform(scale, ((x0 + x1) / 2, (y0 + y1) / 2), (PAPER_W / 2, PAPER_H / 2))
+
+
 def alignment(user: np.ndarray, ref: np.ndarray) -> Transform:
     """Uniform scale + translation that puts the user's ink centroid and overall spread onto the reference's."""
     mu, mr = moments(user), moments(ref)
@@ -255,10 +275,12 @@ def score(reference: Reference | Image.Image, strokes: list[dict], level: int) -
                 "next_step": None, "warning": "no lines were found in the reference"}
     transform = Transform()
     aligned = level in ALIGNED_LEVELS
-    user = rasterize(points)
     near_ref = envelope(ref_ink)
+    if aligned:
+        transform = framing(points)
+    user = rasterize(points, transform)
     if aligned and user.any():
-        transform = alignment(envelope(user), near_ref)
+        transform = transform.then(alignment(envelope(user), near_ref))
         user = rasterize(points, transform)
     if not user.any():
         misses = regions(ref_line, transform, "M", "missing")

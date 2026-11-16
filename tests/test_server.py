@@ -11,7 +11,8 @@ from PIL import Image
 
 from drawing_room import server as server_module
 from drawing_room.references import BUILTINS, png_bytes, render
-from drawing_room.server import App, PinGate, create_server
+from drawing_room.projects import ProjectStore
+from drawing_room.server import App, PinGate, create_server, local_network_client
 
 
 def circle(cx=500, cy=375, r=220):
@@ -33,11 +34,11 @@ class FakeRunner:
 
 
 @pytest.fixture
-def running():
+def running(tmp_path):
     started = []
 
     def start(lan=False, app=None):
-        srv = create_server(0, lan=lan, app=app or App(coach_runner=FakeRunner()))
+        srv = create_server(0, lan=lan, app=app or App(coach_runner=FakeRunner(), projects=ProjectStore(tmp_path)))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         started.append(srv)
         return srv
@@ -88,7 +89,35 @@ def test_rejects_other_hosts_and_origins(running):
     assert status == 200
 
 
-def test_lan_mode_requires_pin(running):
+def test_lan_mode_needs_no_pin_by_default(running, tmp_path):
+    srv = running(lan=True)
+    lan_host = f"192.168.1.20:{srv.server_address[1]}"
+    status, body, _ = call(srv, "GET", "/api/session", host=lan_host)
+    assert status == 200 and not body["pin_required"] and body["authorised"]
+    assert call(srv, "GET", "/api/references", host=lan_host)[0] == 200
+    assert call(srv, "POST", "/api/score", {"level": 1, "reference": {"id": "circle"}, "strokes": circle()},
+                host=lan_host)[0] == 200
+    # A cross-site Origin is still refused.
+    assert call(srv, "POST", "/api/score", {"level": 1}, host=lan_host, headers={"Origin": "http://evil.example"})[0] == 403
+
+
+def test_create_server_adds_a_pin_only_when_asked(tmp_path):
+    for pin, expected in ((False, False), (True, True)):
+        srv = create_server(0, lan=True, pin=pin, data=tmp_path)
+        assert (srv.app.gate is not None) is expected
+        srv.server_close()
+
+
+def test_lan_mode_only_answers_the_local_network():
+    own = ["172.168.20.75"]
+    for client in ("127.0.0.1", "::1", "192.168.1.9", "10.0.0.4", "172.20.1.1", "169.254.3.3", "172.168.3.9",
+                   "::ffff:192.168.1.9", "fe80::1%en0"):
+        assert local_network_client(client, own), client
+    for client in ("8.8.8.8", "172.169.0.1", "1.1.1.1", "not-an-ip"):
+        assert not local_network_client(client, own), client
+
+
+def test_lan_mode_with_pin(running):
     app = App(gate=PinGate("123456"), coach_runner=FakeRunner())
     srv = running(lan=True, app=app)
     port = srv.server_address[1]
@@ -167,6 +196,13 @@ def test_log_post_sends_redacted_gelf(monkeypatch):
     assert "123456" not in sent[0][1]["request"]
     assert "AAAA" not in sent[1][1]["request"] and '"count": 1' in sent[1][1]["request"]
     assert sent[1][1]["error"] == "boom"
+    # Project saves nest strokes and the uploaded image inside the drawing: neither is logged.
+    drawing = {"level": 2, "reference": {"kind": "upload", "dataUrl": "x", "image": "data:image/png;base64," + "B" * 5000},
+               "layers": [{"id": "line", "strokes": circle()}, {"id": "color", "strokes": []}]}
+    server_module.log_post("/api/projects/abcdefabcdef/save", {"drawing": drawing}, {"project": {}}, None)
+    logged = sent[2][1]["request"]
+    assert "BBBB" not in logged and "500" not in logged.split('"layers"')[0]
+    assert '"layers": 2' in logged and '"count": 1' in logged and '"level": 2' in logged
 
 
 def test_send_gelf_format(monkeypatch):
@@ -227,3 +263,54 @@ def test_static_files_and_reference_images(running):
     assert call(srv, "GET", "/static/../server.py")[0] == 404
     status, body, _ = call(srv, "GET", "/api/references")
     assert {ref["id"] for ref in body["references"]} >= {"line", "circle", "ellipse", "cube", "cylinder", "apple"}
+
+
+def test_projects_new_open_save_rename_delete(running):
+    srv = running()
+    assert call(srv, "GET", "/api/projects")[1] == {"projects": []}
+    status, body, _ = call(srv, "POST", "/api/projects", {"name": "  Apple   study ", "drawing": {"level": 3}})
+    assert status == 200
+    project = body["project"]
+    assert project["name"] == "Apple study" and project["strokes"] == 0
+    pid = project["id"]
+    drawing = {"level": 3, "layers": [{"id": "line", "strokes": circle()[0:1]}]}
+    saved = call(srv, "POST", f"/api/projects/{pid}/save", {"drawing": drawing})[1]["project"]
+    assert saved["strokes"] == 1 and saved["updated"] >= project["updated"]
+    status, body, _ = call(srv, "GET", f"/api/projects/{pid}")
+    assert status == 200 and body["drawing"]["layers"][0]["strokes"][0]["layer"] == "line"
+    # The reference is only sent when it changes; a save without one keeps it.
+    call(srv, "POST", f"/api/projects/{pid}/save", {"drawing": {**drawing, "reference": {"kind": "builtin", "id": "cube"}}})
+    call(srv, "POST", f"/api/projects/{pid}/save", {"drawing": {**drawing, "level": 2}})
+    kept = call(srv, "GET", f"/api/projects/{pid}")[1]["drawing"]
+    assert kept["reference"] == {"kind": "builtin", "id": "cube"} and kept["level"] == 2
+    call(srv, "POST", f"/api/projects/{pid}/save", {"drawing": {**drawing, "reference": None}})
+    assert call(srv, "GET", f"/api/projects/{pid}")[1]["drawing"]["reference"] is None
+    assert call(srv, "POST", f"/api/projects/{pid}/rename", {"name": "Apple"})[1]["project"]["name"] == "Apple"
+    assert call(srv, "POST", f"/api/projects/{pid}/rename", {"name": "   "})[1]["project"]["name"] == "Apple"
+    second = call(srv, "POST", "/api/projects", {})[1]["project"]
+    assert second["name"] == "Untitled"
+    assert [p["id"] for p in call(srv, "GET", "/api/projects")[1]["projects"]] == [second["id"], pid]
+    assert call(srv, "POST", f"/api/projects/{pid}/delete", {})[0] == 200
+    assert call(srv, "GET", f"/api/projects/{pid}")[0] == 404
+    assert call(srv, "POST", f"/api/projects/{pid}/save", {"drawing": {}})[0] == 404
+    assert [p["id"] for p in call(srv, "GET", "/api/projects")[1]["projects"]] == [second["id"]]
+
+
+def test_projects_reject_bad_ids_and_bad_drawings(running, tmp_path):
+    srv = running()
+    for path in ("/api/projects/../../etc/save", "/api/projects/ABCDEFABCDEF/save", "/api/projects/abc/save"):
+        assert call(srv, "POST", path, {"drawing": {}})[0] == 404
+    assert call(srv, "POST", "/api/projects", {"drawing": "nope"})[0] == 400
+    assert call(srv, "POST", "/api/projects", {"drawing": {"layers": [1, 2]}})[0] == 400
+    assert not list(tmp_path.glob(".tmp-*"))
+
+
+def test_project_store_skips_broken_files(tmp_path):
+    store = ProjectStore(tmp_path, clock=iter(range(100)).__next__)
+    first = store.create("A")
+    store.create("B")
+    (tmp_path / "ffffffffffff.meta.json").write_text("{broken")
+    (tmp_path / "notes.meta.json").write_text("{}")
+    assert [p["name"] for p in store.list()] == ["B", "A"]
+    store.rename(first["id"], "A2")
+    assert store.list()[0]["name"] == "A2"
