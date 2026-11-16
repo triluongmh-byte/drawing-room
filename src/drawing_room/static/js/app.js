@@ -12,7 +12,7 @@ const PAPER_W = 1000;
 const PAPER_H = 750;
 const STORAGE_KEY = "drawing-room:v0";
 const LEVELS = {
-  0: { underlay: "guide", coach: false, guide: false, submit: false, drillsOnly: true },
+  0: { underlay: "guide", coach: false, guide: false, submit: false, drillsOnly: true, autoScore: true },
   1: { underlay: "full", coach: true, guide: true, submit: false },
   2: { underlay: "full", coach: true, guide: false, submit: false },
   3: { underlay: "none", coach: true, guide: false, submit: false },
@@ -335,7 +335,7 @@ function afterChange() {
   save();
   updateButtons();
   renderLayers();
-  if (LEVELS[state.level].guide) scheduleGuide();
+  if (LEVELS[state.level].guide || LEVELS[state.level].autoScore) scheduleGuide();
 }
 
 function undo() { if (state.history.undo()) { state.marks = []; afterChange(); state.dirty = true; } }
@@ -532,9 +532,12 @@ let guideTimer = null;
 function scheduleGuide(delay = 700) {
   clearTimeout(guideTimer);
   guideTimer = setTimeout(async () => {
-    if (!LEVELS[state.level].guide || !state.reference) return;
+    const level = LEVELS[state.level];
+    if (!(level.guide || level.autoScore) || !state.reference) return;
     try {
       const result = await postJSON("/api/score", scoringBody());
+      // Warm-up drills are scored automatically after every stroke.
+      if (level.autoScore && allStrokes(state.history.doc).length) showScore(result);
       if (result.next_step) showNextStep(result.next_step);
     } catch { /* the guide is a nicety; the Score button reports errors */ }
   }, delay);

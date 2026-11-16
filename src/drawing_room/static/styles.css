@@ -90,6 +90,9 @@ select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; ba
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
 .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 8px; }
 
+/* The reference stays in view beside the paper while the rest of the column scrolls. */
+.reference-panel { position: sticky; top: 0; z-index: 1; box-shadow: 0 -10px 0 var(--bg); }
+
 .reference-view { position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; }
 .reference-view img { display: block; width: 100%; height: auto; }
 .reference-mark { position: absolute; border: 2px dashed var(--accent); background: rgba(47, 111, 143, 0.1); border-radius: 4px; pointer-events: none; }
