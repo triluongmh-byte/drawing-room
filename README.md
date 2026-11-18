@@ -1,10 +1,37 @@
-# drawing-room
+# ✏️ drawing-room
 
-A local practice room for learning to draw by hand. You draw on a pressure-sensitive paper (Apple Pencil on iPad,
-Wacom/XP-Pen on a Mac) next to a reference. A deterministic scorer compares your lines to the reference, and an AI coach
-(Claude) explains what to fix and what to do next.
+**A local practice room for learning to draw by hand.** Draw with real pen pressure and tilt (Apple Pencil on an iPad,
+or a Wacom / XP-Pen / Huion tablet on a computer) next to a reference. A deterministic scorer compares your lines to it,
+and Claude coaches you, or draws construction lines for you like a CAD helper.
 
-![Guided level with the next step highlighted](docs/screenshots/02-level1-cube-next-step.png)
+![Claude draws construction lines from the chat while you draw by hand](docs/screenshots/15-claude-draws.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/02-level1-cube-next-step.png" alt="Guided tracing of a cube"><br><sub><b>Trace, guided</b>: a step list for each reference, and the next step is named after every stroke.</sub></td>
+    <td width="50%"><img src="docs/screenshots/05-level3-squashed.png" alt="Missed and stray regions boxed after scoring"><br><sub><b>Scored, not guessed</b>: shape and proportion out of 10, with missed (M) and stray (S) regions boxed.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/07-level4-submit-review.png" alt="Claude reviews a submitted cylinder"><br><sub><b>Review on submit</b>: Claude reads the numbers and the overlay, then tells you what to practise next.</sub></td>
+    <td><img src="docs/screenshots/11-pencil.png" alt="Pencil pressure, tilted shading and colour"><br><sub><b>A real pencil</b>: pressure for line weight, tilt the pen for grainy shading, any colour.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/09-layers.png" alt="Layers panel"><br><sub><b>Layers</b>: hide, lock, opacity, reorder, and ★ the ones that count towards the score.</sub></td>
+    <td><img src="docs/screenshots/10-ruler.png" alt="Ruler on the paper"><br><sub><b>Ruler</b>: strokes snap to its edge; turn it in 15° steps or type an angle.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/06-zoom-rotate.png" alt="Zoomed and rotated paper"><br><sub><b>Turn the paper</b>: pan, pinch-zoom and twist like a real sheet.</sub></td>
+    <td><img src="docs/screenshots/13-projects.png" alt="Projects menu"><br><sub><b>Projects</b>: every drawing saves itself on the computer and opens on the iPad too.</sub></td>
+  </tr>
+</table>
+
+## Highlights
+
+- 🖊️ **Pressure and tilt** from the browser's Pointer Events: no app to install on the iPad, just Safari.
+- 📐 **Five levels**, from warm-up drills to drawing from a reference with a review at the end.
+- 🎯 **A deterministic score**: distance transforms on the lines themselves, so the same drawing always gets the same number.
+- 🤖 **Claude as a coach and a CAD helper**: ask "draw a box in two-point perspective" and it draws guides on its own layer.
+- 🔒 **Local first**: the server runs on your own machine and binds to 127.0.0.1 unless you ask for the LAN.
 
 ## Run it
 
@@ -23,14 +50,20 @@ uv run drawing-room serve --port 9000 --data ~/drawings   # projects live in ~/.
 On the iPad, open the printed `http://<mac-ip>:8430` address in Safari.
 All JavaScript is served by the Mac, so the iPad needs no internet; the coach needs the Mac to reach Claude.
 
+### Pen tablets (Wacom, XP-Pen, Huion)
+
+A screenless tablet such as the XP-Pen Deco Fun works in Chrome or Edge. Install the maker's driver, and on Windows
+turn on **Windows Ink** in it (XP-Pen: PenTablet → Pen → Windows Ink). Without it the browser sees a mouse, so there is
+no pressure or tilt. If a long press then shows a circle or the first stroke lags, turn off the press-and-hold effects
+in Settings → Bluetooth & devices → Pen & Windows Ink, but leave Windows Ink on in the driver. On Android, plug the
+tablet in over USB OTG and open the `--lan` address in Chrome.
+
 ## What you can do
 
 - **Projects** (🗂 at the top left): every drawing is a project kept on the Mac, so the iPad and the Mac open the same
   work. New (named straight away), open any project from the list, rename it, or delete it. Changes save themselves
   about a second after you stop, and a copy kept in the browser covers a reload or a closed tab before that. A drawing
   from before projects becomes "My first drawing".
-
-  ![Projects menu](docs/screenshots/13-projects.png)
 - **Paper**: a white sheet on a dark desk with a fine grid. Pick its shape in the project menu (🗂 → Paper): 4:3 (the
   reference frame), A4 landscape or portrait, square, 16:9 or 9:16. The reference and scoring frame always sits in the
   middle of the sheet (shown as a faint outline on the bigger sheets), and strokes are clipped to the sheet. At levels
@@ -57,8 +90,6 @@ All JavaScript is served by the Mac, so the iPad needs no internet; the coach ne
   ask Claude for the rest; ask "redo it" to replace what it drew. One undo takes back everything Claude drew for a
   message. The Claude layer is not scored (★ off). Ask questions in the same chat for advice. The chat is kept with the
   project. It is off in the warm-up drills, and at level 4 until you submit; the review then appears in the chat.
-
-  ![Claude draws construction lines from the chat](docs/screenshots/15-claude-draws.png)
 - **Layers**, like a paint program. A new drawing starts with Sketch, Line and Color; add up to 24 (＋ or ⇧N), and a
   new layer opens with its name field ready to type. Tap a layer to draw on it, tap the active layer's name to rename it.
   Each layer can be hidden (👁), locked (🔒, takes no strokes and no erasing), set to its own opacity, moved up or down,
