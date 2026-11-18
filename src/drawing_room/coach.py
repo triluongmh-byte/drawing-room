@@ -124,11 +124,11 @@ def _cli_command() -> list[str]:
     return (os.environ.get("DRAWING_ROOM_CLAUDE") or "claude").split()
 
 
-def cli_arguments(command: list[str] | None = None) -> list[str]:
+def cli_arguments(command: list[str] | None = None, system_prompt: str = SYSTEM_PROMPT) -> list[str]:
     """``claude -p`` restricted to the Read tool, without the user's own settings, hooks or MCP servers."""
     return [*(command or _cli_command()), "-p", "--output-format", "stream-json", "--verbose",
             "--allowedTools", "Read", "--disallowedTools", "Bash,Edit,Write,WebFetch,WebSearch,Agent,NotebookEdit",
-            "--setting-sources", "project", "--strict-mcp-config", "--append-system-prompt", SYSTEM_PROMPT]
+            "--setting-sources", "project", "--strict-mcp-config", "--append-system-prompt", system_prompt]
 
 
 def parse_stream(output: str) -> tuple[str, str | None]:
@@ -151,10 +151,11 @@ def parse_stream(output: str) -> tuple[str, str | None]:
     return (result_text or (texts[-1] if texts else "")), error
 
 
-def ask_cli(prompt: str, workdir: Path, runner=subprocess.run) -> str:
+def ask_cli(prompt: str, workdir: Path, runner=subprocess.run, system_prompt: str = SYSTEM_PROMPT) -> str:
     try:
-        completed = runner(cli_arguments(), input=prompt, cwd=workdir, capture_output=True, text=True,
-                           timeout=COACH_TIMEOUT)
+        # UTF-8 both ways: on Windows the default is the ANSI code page, which cannot carry a Vietnamese question.
+        completed = runner(cli_arguments(system_prompt=system_prompt), input=prompt, cwd=workdir, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=COACH_TIMEOUT)
     except FileNotFoundError:
         raise CoachError("could not find the claude command; install and sign in to Claude Code, "
                          "or set ANTHROPIC_API_KEY") from None

@@ -246,6 +246,18 @@ def stroke_stats(strokes: list[dict]) -> dict:
             "mean_duration_ms": round(sum(durations) / len(durations)) if durations else 0}
 
 
+def where(box) -> str:
+    """Where a region sits on the paper, in words: "in the top left", "in the middle", "in the bottom middle"."""
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    row = "top" if cy < PAPER_H / 3 else "bottom" if cy > 2 * PAPER_H / 3 else ""
+    column = "left" if cx < PAPER_W / 3 else "right" if cx > 2 * PAPER_W / 3 else ""
+    if row and column:
+        return f"in the {row} {column}"
+    if row or column:
+        return f"in the {row or column} middle" if row else f"on the {column}"
+    return "in the middle"
+
+
 def next_step(reference: Reference | None, user: np.ndarray, near_user: np.ndarray, misses: list[dict]) -> dict | None:
     """What to draw next in level 1: the first built-in step not yet covered, or the biggest missed region."""
     if reference is not None:
@@ -258,7 +270,7 @@ def next_step(reference: Reference | None, user: np.ndarray, near_user: np.ndarr
         return {"index": len(reference.steps), "text": "Every part is covered. Go over any wobbly line once more, or submit.",
                 "box": None, "covered": 1.0}
     if misses:
-        return {"index": None, "text": "Trace the lines inside the highlighted area next.", "box": misses[0]["box"], "covered": None}
+        return {"index": None, "text": f"Trace the lines {where(misses[0]['box'])} next.", "box": misses[0]["box"], "covered": None}
     return {"index": None, "text": "Every line is covered. Look for spots where your line drifted away.", "box": None, "covered": None}
 
 

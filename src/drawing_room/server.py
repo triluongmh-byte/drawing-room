@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from drawing_room import assist as assist_module
 from drawing_room import coach as coach_module
 from drawing_room import scoring
 from drawing_room.projects import DEFAULT_DATA, ProjectError, ProjectStore
@@ -237,6 +238,24 @@ class App:
             raise ApiError(502, str(failure)) from None
         return {**answer, "score": result}
 
+    def assist(self, request: dict) -> dict:
+        """The chat: Claude draws shapes for an idea, or answers a question."""
+        level = parse_level(request)
+        strokes = parse_strokes(request)
+        image = name = None
+        if request.get("reference") is not None:
+            _, image, name = parse_reference(request)
+        kwargs = {}
+        if self.coach_runner is not None:
+            kwargs["runner"] = self.coach_runner
+        if self.coach_api_client is not None:
+            kwargs["api_client"] = self.coach_api_client
+        try:
+            return assist_module.assist(image, name, strokes, request.get("sheet"), level,
+                                        str(request.get("message") or ""), request.get("history"), **kwargs)
+        except assist_module.AssistError as failure:
+            raise ApiError(502, str(failure)) from None
+
 
 PROJECT_ROUTE = re.compile(r"/api/projects/([0-9a-f]{12})(?:/(save|rename|delete))?")
 
@@ -336,6 +355,8 @@ def make_handler(app: App, allowed_hosts: set[str] | None, own_addresses: list[s
                 return 200, app.score(request), {}
             if self.path == "/api/coach":
                 return 200, app.coach(request), {}
+            if self.path == "/api/assist":
+                return 200, app.assist(request), {}
             if self.path == "/api/projects":
                 return 200, {"project": app.projects.create(request.get("name"), request.get("drawing"))}, {}
             found = PROJECT_ROUTE.fullmatch(self.path)

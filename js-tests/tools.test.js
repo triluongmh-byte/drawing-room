@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TOOLS, clampSize, restoreToolSettings, stepSize } from "../src/drawing_room/static/js/tools.js";
+import { TOOLS, clampSize, restoreToolSettings, shareColor, stepSize } from "../src/drawing_room/static/js/tools.js";
 
 test("every tool starts at its default size; colours only where a tool has one", () => {
   const settings = restoreToolSettings();
@@ -26,4 +26,11 @@ test("sizes round to half pixels and step by about a tenth of the range", () => 
   assert.equal(stepSize("pencil", 3, 1), 4);
   assert.equal(stepSize("shade", 26, -1), 20);
   assert.equal(stepSize("pencil", 12, 1), 12);
+});
+
+test("a picked colour is shared by every tool that has one, the eraser keeps none", () => {
+  const settings = shareColor(restoreToolSettings(), "#2F6FD0");
+  for (const tool of ["pencil", "shade", "ink", "brush"]) assert.equal(settings[tool].color, "#2f6fd0");
+  assert.equal(settings.eraser.color, undefined);
+  assert.equal(shareColor(settings, "red").pencil.color, "#2f6fd0"); // not a colour: ignored
 });

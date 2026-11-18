@@ -140,3 +140,12 @@ def test_a_drawing_beside_the_frame_still_scores_from_reference():
     assert scoring.score(BUILTINS["circle"], [beside], 3)["shape"] >= 9
     # When tracing (levels 1-2) ink outside the frame is simply not on the reference.
     assert scoring.score(BUILTINS["circle"], [beside], 1)["shape"] == 0
+
+
+def test_where_names_the_part_of_the_paper():
+    from drawing_room.scoring import where
+
+    assert where([358, 494, 658, 610]) == "in the bottom middle"
+    assert where([0, 0, 100, 100]) == "in the top left"
+    assert where([450, 300, 550, 400]) == "in the middle"
+    assert where([900, 300, 1000, 400]) == "on the right"

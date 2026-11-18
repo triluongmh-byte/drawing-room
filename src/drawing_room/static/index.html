@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#f3efe7">
+  <meta name="theme-color" content="#242321">
   <title>Drawing Room</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <!-- One slim bar on top; the paper takes the rest of the screen and the panels float over it. -->
   <header class="toolbar" role="toolbar" aria-label="Drawing tools">
     <div class="project">
       <button id="project-button" class="project-button" aria-haspopup="true" aria-expanded="false" title="Projects">
@@ -25,40 +26,39 @@
       <option value="4">4 · Test: review at end</option>
     </select>
 
+    <div class="spacer"></div>
+
     <div class="segmented tools" role="group" aria-label="Tools">
-      <button data-tool="pencil" class="tool" title="Pencil (P): press lightly for a thin pale line, harder for a thick dark one; tilt an Apple Pencil or Wacom pen on its side to shade" aria-label="Pencil">✏️<span class="label">Pencil</span></button>
-      <button data-tool="shade" class="tool" title="Shade (S): the pencil laid flat, a broad light band for shading; go over it again to darken" aria-label="Shade">🖍<span class="label">Shade</span></button>
-      <button data-tool="ink" class="tool" title="Ink (I): final lines" aria-label="Ink">🖋<span class="label">Ink</span></button>
-      <button data-tool="brush" class="tool" title="Color brush (B)" aria-label="Color brush">🖌<span class="label">Color</span></button>
-      <button data-tool="eraser" class="tool" title="Eraser (E): removes whole strokes on the active layer" aria-label="Eraser">⌫<span class="label">Eraser</span></button>
+      <button data-tool="pencil" class="tool" title="Pencil (P): press lightly for a thin pale line, harder for a thick dark one; tilt an Apple Pencil or Wacom pen on its side to shade" aria-label="Pencil">✏️</button>
+      <button data-tool="shade" class="tool" title="Shade (S): the pencil laid flat, a broad light band for shading; go over it again to darken" aria-label="Shade">🖍</button>
+      <button data-tool="ink" class="tool" title="Ink (I): final lines" aria-label="Ink">🖋</button>
+      <button data-tool="brush" class="tool" title="Color brush (B)" aria-label="Color brush">🖌</button>
+      <button data-tool="eraser" class="tool" title="Eraser (E): removes whole strokes on the active layer" aria-label="Eraser">⌫</button>
     </div>
 
+    <!-- Size and colour sit right next to the tools they belong to; each tool keeps its own. -->
     <div class="group brush-settings">
-      <input id="color" type="color" value="#3b3936" title="Colour of this tool" aria-label="Tool colour">
       <label class="size" title="Size of this tool ([ and ] change it)">
         <input id="size" type="range" min="1" max="12" step="0.5" value="3" aria-label="Tool size">
         <span id="size-value" class="size-value">3</span>
       </label>
+      <input id="color" type="color" value="#3b3936" title="Colour of this tool" aria-label="Tool colour">
     </div>
 
     <div class="group">
-      <button id="ruler-toggle" class="tool" title="Ruler (L): start a stroke against it to draw straight; drag its ends to turn it, its middle to move it" aria-label="Ruler" aria-pressed="false">📏<span class="label">Ruler</span></button>
+      <button id="ruler-toggle" class="tool" title="Ruler (L): start a stroke against it to draw straight; drag its ends to turn it, its middle to move it" aria-label="Ruler" aria-pressed="false">📏</button>
       <label class="ruler-angle" id="ruler-angle-wrap" hidden title="Ruler angle. Dragging an end snaps to 15° steps; hold ⌥ for a free angle.">
         <input id="ruler-angle" type="number" min="0" max="179.9" step="0.5" inputmode="decimal" aria-label="Ruler angle in degrees">°
       </label>
     </div>
 
-    <div class="spacer"></div>
+    <span class="divider" aria-hidden="true"></span>
 
-    <div class="group icons">
-      <button id="undo" title="Undo (⌘Z)" aria-label="Undo">↶</button>
-      <button id="redo" title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
-      <span class="divider" aria-hidden="true"></span>
-      <button id="rotate-left" title="Rotate paper left (⇧R)" aria-label="Rotate paper left">⟲</button>
-      <button id="rotate-right" title="Rotate paper right (R)" aria-label="Rotate paper right">⟳</button>
-      <button id="fit" title="Fit paper (0)" aria-label="Fit paper">⤢</button>
-      <span class="divider" aria-hidden="true"></span>
-      <button id="clear" class="danger" title="Clear every stroke on every layer (undo brings them back)" aria-label="Clear all">🧹</button>
+    <div class="group panel-toggles">
+      <button data-panel-toggle="reference" title="Reference: the picture you draw from, and the next step" aria-label="Reference" aria-expanded="false">🖼</button>
+      <button data-panel-toggle="layers" title="Layers" aria-label="Layers" aria-expanded="false">▤</button>
+      <button data-panel-toggle="coach" title="Score" aria-label="Score" aria-expanded="false">🎯<span id="score-badge" class="badge" hidden></span></button>
+      <button data-panel-toggle="chat" title="Claude: ask it to draw for you, or for advice" aria-label="Claude chat" aria-expanded="false">💬</button>
     </div>
   </header>
 
@@ -66,10 +66,20 @@
     <section class="paper-wrap" id="paper-wrap">
       <canvas id="paper" aria-label="Drawing paper"></canvas>
       <div class="hint" id="paper-hint">Pen or mouse draws · two fingers / space-drag pan · pinch / wheel zoom</div>
-    </section>
 
-    <aside class="side">
-      <section class="panel reference-panel">
+      <!-- Left rail: undo/redo and the view, always at hand beside the paper. -->
+      <nav class="rail" aria-label="Size, undo and view">
+        <button id="undo" title="Undo (⌘Z)" aria-label="Undo">↶</button>
+        <button id="redo" title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
+        <span class="rail-divider" aria-hidden="true"></span>
+        <button id="rotate-left" title="Rotate paper left (⇧R)" aria-label="Rotate paper left">⟲</button>
+        <button id="rotate-right" title="Rotate paper right (R)" aria-label="Rotate paper right">⟳</button>
+        <button id="fit" title="Fit paper (0)" aria-label="Fit paper">⤢</button>
+        <span class="rail-divider" aria-hidden="true"></span>
+        <button id="clear" class="danger" title="Clear every stroke on every layer (undo brings them back)" aria-label="Clear all">🧹</button>
+      </nav>
+
+      <aside class="float-panel reference-card" id="panel-reference" aria-label="Reference" hidden>
         <div class="panel-head">
           <h2>Reference</h2>
           <div class="reference-pick">
@@ -77,6 +87,7 @@
             <label class="button upload" title="Upload your own reference image" aria-label="Upload a reference">⤒
               <input id="upload" type="file" accept="image/*" hidden>
             </label>
+            <button class="close" data-panel-close="reference" title="Hide the reference" aria-label="Hide the reference">✕</button>
           </div>
         </div>
         <div class="reference-view" id="reference-view">
@@ -86,9 +97,15 @@
         <label class="slider-row">Underlay
           <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.35">
         </label>
-      </section>
+        <section class="guide" id="guide-panel" hidden>
+          <h2>Next step</h2>
+          <ol class="steps" id="steps"></ol>
+          <p id="next-step" class="next-step"></p>
+          <button id="next-hint">Show next step</button>
+        </section>
+      </aside>
 
-      <section class="panel layers-panel">
+      <aside class="float-panel right-panel" id="panel-layers" aria-label="Layers" hidden>
         <div class="panel-head">
           <h2 title="Tap a layer to draw on it, tap its name to rename it. 🔒 locks it, ★ counts it in the score.">Layers</h2>
           <div class="layer-actions">
@@ -104,35 +121,39 @@
           <input id="layer-opacity" type="range" min="0" max="1" step="0.05" value="1">
           <span id="layer-opacity-value" class="slider-value">100%</span>
         </label>
-      </section>
+      </aside>
 
-      <section class="panel guide" id="guide-panel" hidden>
-        <h2>Next step</h2>
-        <ol class="steps" id="steps"></ol>
-        <p id="next-step" class="next-step"></p>
-        <button id="next-hint">Show next step</button>
-      </section>
+      <aside class="float-panel right-panel" id="panel-coach" aria-label="Score" hidden>
+        <section>
+          <div class="panel-head">
+            <h2>Score</h2>
+            <button class="close" data-panel-close="coach" title="Close" aria-label="Close">✕</button>
+          </div>
+          <div class="score" id="score">
+            <div><span class="label">Shape</span><span id="score-shape" class="value">–</span></div>
+            <div><span class="label">Proportion</span><span id="score-proportion" class="value">–</span></div>
+          </div>
+          <p id="score-detail" class="detail"></p>
+          <div class="row">
+            <button id="score-button" class="primary">Score</button>
+            <button id="submit-button" class="primary" hidden>Submit</button>
+          </div>
+        </section>
+      </aside>
 
-      <section class="panel">
-        <h2>Score</h2>
-        <div class="score" id="score">
-          <div><span class="label">Shape</span><span id="score-shape" class="value">–</span></div>
-          <div><span class="label">Proportion</span><span id="score-proportion" class="value">–</span></div>
+      <!-- Claude, docked on the right: say an idea and it draws it on its own layer, or ask for advice. -->
+      <aside class="float-panel chat-dock" id="panel-chat" aria-label="Claude" hidden>
+        <div class="panel-head">
+          <h2>Claude</h2>
+          <button class="close" data-panel-close="chat" title="Hide the chat" aria-label="Hide the chat">✕</button>
         </div>
-        <p id="score-detail" class="detail"></p>
-        <div class="row">
-          <button id="score-button" class="primary">Score</button>
-          <button id="submit-button" class="primary" hidden>Submit</button>
-        </div>
-      </section>
-
-      <section class="panel coach" id="coach-panel">
-        <h2>Coach</h2>
-        <textarea id="question" rows="2" placeholder="Ask the coach, e.g. “Why does my circle look flat?”"></textarea>
-        <button id="ask-button">Ask coach</button>
-        <div id="coach-reply" class="coach-reply" aria-live="polite"></div>
-      </section>
-    </aside>
+        <div id="coach-reply" class="chat-log" aria-live="polite"></div>
+        <form class="chat-form" id="coach-panel" onsubmit="return false">
+          <textarea id="question" rows="2" placeholder="Ask Claude to draw something, or ask for advice…"></textarea>
+          <button id="ask-button" class="primary" type="button" title="Send (Enter)">Send</button>
+        </form>
+      </aside>
+    </section>
   </main>
 
   <div class="project-menu" id="project-menu" role="dialog" aria-label="Projects" hidden>
@@ -140,6 +161,9 @@
       <input id="project-rename" maxlength="60" aria-label="Project name" title="Rename this project: type and press Enter">
       <button id="project-delete" class="danger" title="Delete this project" aria-label="Delete project">🗑</button>
     </div>
+    <label class="paper-pick" title="The sheet's shape. The reference and scoring frame always sits in its middle.">Paper
+      <select id="paper-size" aria-label="Paper size"></select>
+    </label>
     <button id="project-new" class="primary project-new">＋ New project</button>
     <ul class="project-list" id="project-list"></ul>
   </div>

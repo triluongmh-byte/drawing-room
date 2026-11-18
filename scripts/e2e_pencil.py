@@ -80,21 +80,26 @@ with sync_playwright() as p:
     shade = page.evaluate(STROKES)[-1]
     check(shade["tool"] == "shade" and shade["shade"] and shade["size"] == 40, f"Shade strokes are shading at size 40: {shade}")
 
-    # Colored pencil: each tool keeps its own colour.
+    # Colored pencil: a picked colour is used straight away, even when the picker only sends `change` (Safari),
+    # and it stays when switching tools.
     page.click("[data-tool=pencil]")
     check(page.input_value("#size") == "3", "the pencil kept its own size")
-    page.eval_on_selector("#color", "el => { el.value = '#2f6fd0'; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }")
+    page.eval_on_selector("#color", "el => { el.value = '#2f6fd0'; el.dispatchEvent(new Event('change')); }")
     draw([[500 + 220 * math.cos(a / 60), 375 + 220 * math.sin(a / 60), 0.7, 0] for a in range(0, 380)])
-    check(page.evaluate(STROKES)[-1]["color"] == "#2f6fd0", "the pencil draws in its colour")
+    check(page.evaluate(STROKES)[-1]["color"] == "#2f6fd0", "the pencil draws in the picked colour (change only)")
+    page.click("[data-tool=ink]")
+    check(page.input_value("#color") == "#2f6fd0", "the ink keeps the picked colour")
     page.click("[data-tool=brush]")
-    check(page.input_value("#color") == "#e0604a", "the colour brush kept its own colour")
+    page.eval_on_selector("#color", "el => { el.value = '#e0604a'; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }")
+    page.click("[data-tool=pencil]")
+    check(page.input_value("#color") == "#e0604a", "back on the pencil, the colour is still the last one picked")
     page.click("[data-tool=eraser]")
     check(not page.is_visible("#color"), "the eraser has no colour")
 
     page.screenshot(path=f"{OUT}/11-pencil.png")
 
     # Shading is tone, not line: the circle alone scores the same with or without it.
-    page.click("#score-button"); page.wait_for_timeout(600)
+    page.eval_on_selector("#score-button", "b => b.click()"); page.wait_for_timeout(600)
     detail = page.inner_text("#score-detail")
     count = sum(1 for s in page.evaluate(STROKES) if not s["shade"])
     check(f"{count} strokes" in detail, f"only lines are scored ({count}): {detail!r}")

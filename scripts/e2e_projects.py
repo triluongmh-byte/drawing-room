@@ -71,9 +71,20 @@ with sync_playwright() as p:
     check(mac.evaluate(NAME) == "My first drawing" and mac.evaluate(COUNT) == 1, "the old drawing became the first project")
     check(mac.input_value("#level") == "2", "with its level")
 
-    # The paper is white edge to edge.
-    corner = mac.evaluate("""() => { const c = document.getElementById('paper'); const d = c.getContext('2d').getImageData(3, 3, 1, 1).data; return [...d]; }""")
-    check(corner[:3] == [255, 255, 255], f"the paper reaches the corner of the drawing area: {corner}")
+    # A white sheet on a dark desk; the paper size is picked in the project menu and kept with the project.
+    PIXEL = """([x, y]) => { const c = document.getElementById('paper'); const r = c.getBoundingClientRect();
+      const [sx, sy] = window.drawingRoom.paperToScreen(x, y); const k = c.width / r.width;
+      return [...c.getContext('2d').getImageData(Math.round(sx * k), Math.round(sy * k), 1, 1).data]; }"""
+    corner = mac.evaluate("""() => [...document.getElementById('paper').getContext('2d').getImageData(3, 3, 1, 1).data]""")
+    check(max(corner[:3]) < 80, f"outside the sheet is the dark desk: {corner}")
+    check(mac.evaluate(PIXEL, [500, 20])[:3] == [255, 255, 255], "the sheet is white")
+    mac.click("#project-button")
+    mac.select_option("#paper-size", "a4-portrait")
+    mac.keyboard.press("Escape")
+    check(mac.evaluate(PIXEL, [500, 1000])[:3] == [255, 255, 255], "an A4 portrait sheet reaches below the frame")
+    mac.evaluate("() => window.drawingRoom.flush()")
+    mac.reload(); ready(mac)
+    check(mac.evaluate("() => window.drawingRoom.state.paper") == "a4-portrait", "the paper size is kept with the project")
 
     # New project, named straight away.
     mac.click("#project-button")

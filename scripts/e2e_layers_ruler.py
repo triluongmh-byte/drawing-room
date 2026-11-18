@@ -54,6 +54,7 @@ with sync_playwright() as p:
     page.evaluate("() => localStorage.clear()")
     page.reload()
     page.wait_for_function("() => window.drawingRoom.state.references.length > 0")
+    page.click("[data-panel-toggle=layers]")  # the layers float over the paper; open them
     page.select_option("#level", "2")
     page.select_option("#reference", "circle")
     page.wait_for_timeout(300)
@@ -93,10 +94,10 @@ with sync_playwright() as p:
     check([l[0] for l in layers(page)] == ["Sketch", "Shadows", "Line", "Color"], "moved back down")
 
     # Scoring follows the ★ flag.
-    page.click("#score-button"); page.wait_for_timeout(600)
+    page.eval_on_selector("#score-button", "b => b.click()"); page.wait_for_timeout(600)
     scored_on = page.inner_text("#score-shape")
     page.click("#layers li.active button.scored")
-    page.click("#score-button"); page.wait_for_timeout(600)
+    page.eval_on_selector("#score-button", "b => b.click()"); page.wait_for_timeout(600)
     scored_off = page.inner_text("#score-shape")
     check(float(scored_on) > 0 and float(scored_off) == 0, f"★ decides what is scored: on={scored_on} off={scored_off}")
     page.click("#layers li.active button.scored")

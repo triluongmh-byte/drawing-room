@@ -7,12 +7,14 @@ import {
   MAX_LAYERS, allStrokes, canDraw, createDocument, createReferenceState, getLayer, layerIndex, referenceVisible,
   restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
 } from "./layers.js";
+import { initPanels } from "./panels.js";
+import { DEFAULT_PAPER, PAPERS, paperId, sheetRect } from "./paper.js";
 import { settlePencil } from "./pencil.js";
 import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
 import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
 import { createRuler, dragEnd, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeHits } from "./strokes.js";
-import { COLORED, clampSize, restoreToolSettings, stepSize } from "./tools.js";
+import { COLORED, clampSize, restoreToolSettings, shareColor, stepSize } from "./tools.js";
 import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoomAt } from "./view.js";
 
 const PAPER_W = 1000;
@@ -68,7 +70,10 @@ const state = {
   pointers: new Map(), // id -> { mode, x, y }
   gesture: null,
   marks: [], // miss regions from the last score, paper coordinates of the drawing
-  nextBox: null,
+  paper: DEFAULT_PAPER, // the sheet's shape around the reference frame (paper.js)
+  claudeLayer: null, // id of the layer Claude draws on, made the first time it draws
+  chat: [], // [{ role: "user" | "assistant", text }] for the open project
+  assisting: false, // waiting for Claude
   submitted: false,
   dirty: true,
 };
@@ -81,6 +86,7 @@ function drawingPayload({ withReference = true } = {}) {
   return {
     level: state.level, ...serializeDocument(state.history.doc), active: state.activeLayer,
     rulerOn: state.rulerOn, ruler: state.ruler, underlayOpacity: state.underlayState.opacity,
+    paper: state.paper, claudeLayer: state.claudeLayer, chat: state.chat.slice(-CHAT_KEEP),
     ...(withReference ? { reference } : {}),
   };
 }
@@ -157,6 +163,13 @@ function applyDrawing(saved) {
     if (meta) state.reference = { kind: "builtin", id: meta.id, name: meta.name, meta };
   }
   state.savedReference = state.reference;
+  state.paper = paperId(saved?.paper);
+  $("paper-size").value = state.paper;
+  state.claudeLayer = typeof saved?.claudeLayer === "string" && getLayer(state.history.doc, saved.claudeLayer) ? saved.claudeLayer : null;
+  state.chat = Array.isArray(saved?.chat)
+    ? saved.chat.filter((m) => m && typeof m.text === "string" && (m.role === "user" || m.role === "assistant")).slice(-CHAT_KEEP)
+    : [];
+  renderChat();
   state.marks = [];
   state.current = null;
   state.erasing = null;
@@ -275,6 +288,7 @@ async function startProjects() {
     if (!localStorage.getItem(MIGRATED_KEY)) legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || "null");
   } catch { legacy = null; }
   state.tools = restoreToolSettings(device.tools ?? legacy?.tools);
+  shareColor(state.tools, state.tools[COLORED.includes(device.tool) ? device.tool : "pencil"].color);
   let openId = projects.some((p) => p.id === device.project) ? device.project : projects[0]?.id;
   if (legacy && (hasStrokes(legacy) || !projects.length)) {
     const { project } = await postJSON("/api/projects", { name: hasStrokes(legacy) ? "My first drawing" : "Drawing 1", drawing: legacy });
@@ -328,7 +342,11 @@ function resize() {
 
 function fit() {
   const rect = canvas.getBoundingClientRect();
-  state.view = fitView(PAPER_W, PAPER_H, rect.width, rect.height);
+  const [x0, y0, x1, y1] = sheetRect(state.paper);
+  // Keep the sheet clear of the left rail and the chat on the right.
+  const left = 64, right = chatWidth();
+  const view = fitView(x1 - x0, y1 - y0, Math.max(100, rect.width - left - right), rect.height);
+  state.view = { ...view, x: view.x + left - x0 * view.scale, y: view.y - y0 * view.scale };
   state.viewFitted = true;
   state.dirty = true;
 }
@@ -352,14 +370,6 @@ function drawMarks() {
     ctx.setLineDash([]);
     ctx.fillStyle = "#8a6400";
     ctx.fillText(mark.id, x0 - 4, y0 - 10);
-  }
-  if (state.nextBox) {
-    const [x0, y0, x1, y1] = state.nextBox;
-    ctx.strokeStyle = "#2f6f8f";
-    ctx.lineWidth = lineWidth;
-    ctx.setLineDash([10 / state.view.scale, 6 / state.view.scale]);
-    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    ctx.setLineDash([]);
   }
 }
 
@@ -442,21 +452,54 @@ function drawRuler() {
   ctx.restore();
 }
 
+let desk = null; // { dpr, pattern }
+
+/** The desk around the sheet: dark grey with a fine grid, a fixed size on screen. */
+function deskPattern(dpr) {
+  if (desk?.dpr === dpr) return desk.pattern;
+  const cell = Math.round(22 * dpr);
+  const tile = Object.assign(document.createElement("canvas"), { width: cell, height: cell });
+  const g = tile.getContext("2d");
+  g.fillStyle = "#2a2a2a";
+  g.fillRect(0, 0, cell, cell);
+  g.fillStyle = "#353535";
+  g.fillRect(0, 0, cell, Math.max(1, Math.round(dpr)));
+  g.fillRect(0, 0, Math.max(1, Math.round(dpr)), cell);
+  desk = { dpr, pattern: ctx.createPattern(tile, "repeat") };
+  return desk.pattern;
+}
+
 function render() {
   state.dirty = false;
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  // The paper is the whole drawing area. The reference and scoring frame (PAPER_W x PAPER_H) sits in it.
-  ctx.fillStyle = "#ffffff";
+  // The desk: dark with a fine grid, like the space around the canvas in a painting app.
+  ctx.fillStyle = deskPattern(dpr);
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const { x, y, scale, rotation } = state.view;
   const c = Math.cos(rotation) * scale, s = Math.sin(rotation) * scale;
   ctx.setTransform(dpr * c, dpr * s, -dpr * s, dpr * c, dpr * x, dpr * y);
 
+  // The sheet, with a soft shadow; strokes are clipped to it like on real paper.
+  const [sx0, sy0, sx1, sy1] = sheetRect(state.paper);
   ctx.save();
-  ctx.strokeStyle = "rgba(60, 50, 40, 0.14)";
-  ctx.lineWidth = 1 / scale;
-  ctx.strokeRect(0, 0, PAPER_W, PAPER_H);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+  ctx.shadowBlur = 18 * dpr;
+  ctx.shadowOffsetY = 4 * dpr;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+  ctx.clip();
+  if (state.paper !== DEFAULT_PAPER) {
+    // The reference and scoring frame inside a bigger sheet.
+    ctx.strokeStyle = "rgba(60, 50, 40, 0.14)";
+    ctx.lineWidth = 1 / scale;
+    ctx.strokeRect(0, 0, PAPER_W, PAPER_H);
+  }
   if (referenceVisible(state.underlayState) && state.underlay?.complete && state.underlay.naturalWidth) {
     ctx.globalAlpha = state.underlayState.opacity;
     ctx.drawImage(state.underlay, 0, 0, PAPER_W, PAPER_H);
@@ -899,7 +942,6 @@ function applyReference() {
   const guideOnly = level.underlay === "guide" && state.reference?.kind === "builtin" && state.reference.meta?.drill;
   state.underlay = state.reference ? loadImage(referenceUrl(guideOnly)) : null;
   state.marks = [];
-  state.nextBox = null;
   $("reference-mark").hidden = true;
   $("score-shape").textContent = "–";
   $("score-proportion").textContent = "–";
@@ -941,12 +983,13 @@ function setLevel(level) {
   state.underlayState.locked = config.underlay === "none";
   state.submitted = false;
   $("guide-panel").hidden = !config.guide;
-  $("ask-button").disabled = !config.coach;
+  $("ask-button").disabled = !config.coach || state.assisting;
   $("question").disabled = !config.coach;
-  $("coach-panel").hidden = level === 0;
+  $("question").placeholder = level === 0 ? "Warm-up drills are just you and the pen."
+    : level === 4 ? "Claude stays quiet until you press Submit."
+    : "Ask Claude to draw something, or ask for advice…";
   $("submit-button").hidden = !config.submit;
   $("score-button").hidden = config.submit;
-  $("coach-reply").textContent = level === 4 ? "The coach stays quiet until you press Submit." : "";
   fillReferenceSelect();
   applyReference();
   renderLayers();
@@ -1050,36 +1093,119 @@ function renderSteps(next) {
 function showNextStep(next) {
   renderSteps(next);
   $("next-step").textContent = next.text;
-  state.nextBox = next.box;
-  const mark = $("reference-mark");
-  if (next.box) {
-    const [x0, y0, x1, y1] = next.box;
-    Object.assign(mark.style, { left: `${(x0 / PAPER_W) * 100}%`, top: `${(y0 / PAPER_H) * 100}%`,
-      width: `${((x1 - x0) / PAPER_W) * 100}%`, height: `${((y1 - y0) / PAPER_H) * 100}%` });
-    mark.hidden = false;
-  } else {
-    mark.hidden = true;
-  }
   state.dirty = true;
 }
 
+// ------------------------------------------------------------------ chat with Claude
+
+const CHAT_KEEP = 40; // messages kept with a project
+const CLAUDE_STYLE = {
+  construction: { color: "#4a90e2", size: 1.6 }, // light blue guides to draw over
+  line: { color: "#26282b", size: 2.6 }, // finished lines
+};
+
+function chatWidth() {
+  const chat = $("panel-chat");
+  return chat && !chat.hidden ? chat.offsetWidth + 16 : 0;
+}
+
+function bubble(role, text, extra = "") {
+  return Object.assign(document.createElement("div"), { className: `msg ${role} ${extra}`.trim(), textContent: text });
+}
+
+function renderChat(pending = null) {
+  const log = $("coach-reply");
+  log.innerHTML = "";
+  for (const message of state.chat) log.append(bubble(message.role, message.text));
+  if (pending) log.append(pending);
+  if (!state.chat.length && !pending) {
+    log.append(Object.assign(document.createElement("p"), {
+      className: "chat-empty",
+      textContent: "Tell Claude what to draw and it draws it for you, like a CAD helper: “draw a box in two-point "
+        + "perspective”, “add a centre line”, “sketch the cap”. Draw by hand wherever you like. Blue lines are guides; "
+        + "Claude's lines go on their own layer and never count in the score.",
+    }));
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+function pushChat(role, text) {
+  state.chat = [...state.chat, { role, text }].slice(-CHAT_KEEP);
+  renderChat();
+  save();
+}
+
+function setAssisting(busy, label = "Claude is drawing…") {
+  state.assisting = busy;
+  $("ask-button").disabled = busy || !LEVELS[state.level].coach;
+  renderChat(busy ? bubble("assistant", label, "thinking") : null);
+}
+
+/** The layer Claude draws on: made on top the first time, not scored, and found again by id afterwards. */
+function ensureClaudeLayer() {
+  const existing = state.claudeLayer && getLayer(state.history.doc, state.claudeLayer);
+  if (existing) return existing;
+  const layer = state.history.addLayer({ name: "Claude", scored: false }, state.history.doc.layers.at(-1).id);
+  if (layer) state.claudeLayer = layer.id;
+  return layer;
+}
+
+/** Claude's shapes, already turned into points by the server, as ordinary ink strokes. */
+function claudeStrokes(drawn, layerId) {
+  const t0 = Math.round(performance.now());
+  return drawn.map((shape) => {
+    const style = CLAUDE_STYLE[shape.style] ?? CLAUDE_STYLE.line;
+    const stroke = createStroke({ layer: layerId, tool: "ink", size: style.size, opacity: 1, color: shape.color ?? style.color });
+    shape.points.forEach(([x, y], i) => addPoint(stroke, x, y, 0.5, t0 + i, 0, 0));
+    return stroke;
+  }).filter((stroke) => stroke.points.length);
+}
+
+async function sendChat() {
+  const text = $("question").value.trim();
+  if (!text || state.assisting || !LEVELS[state.level].coach) return;
+  const history = state.chat.slice(-12);
+  $("question").value = "";
+  pushChat("user", text);
+  setAssisting(true);
+  try {
+    const answer = await postJSON("/api/assist", {
+      level: state.level, reference: referencePayload(), sheet: sheetRect(state.paper), message: text, history,
+      strokes: strokesForScoring(state.history.doc, serializeStroke)
+        .map((stroke) => ({ ...stroke, assistant: stroke.layer === state.claudeLayer })),
+    });
+    let note = "";
+    if (answer.strokes.length || answer.clear_previous) {
+      const layer = ensureClaudeLayer();
+      if (!layer) note = " (No room for Claude's layer: 24 layers is the most.)";
+      else {
+        state.history.addMany(claudeStrokes(answer.strokes, layer.id), { replace: answer.clear_previous ? layer.id : null });
+        afterChange();
+        if (!layer.visible) note = " (Claude's layer is hidden: tap 👁 in Layers to see it.)";
+      }
+    }
+    if (answer.skipped?.length) note += ` (${answer.skipped.length} shape${answer.skipped.length === 1 ? "" : "s"} could not be drawn.)`;
+    pushChat("assistant", answer.reply + note);
+  } catch (error) {
+    pushChat("assistant", `Claude is unavailable: ${error.message}`);
+  } finally {
+    setAssisting(false);
+  }
+}
+
+/** The end-of-test review (level 4), answered in the chat. */
 async function askCoach(question) {
-  const reply = $("coach-reply");
-  reply.innerHTML = '<span class="thinking">The coach is looking at your drawing…</span>';
-  $("ask-button").disabled = true;
+  setAssisting(true, "Claude is looking at your drawing…");
   try {
     const answer = await postJSON("/api/coach", scoringBody({ question }));
-    reply.textContent = answer.reply;
     showScore(answer.score);
     if (answer.score.next_step) showNextStep(answer.score.next_step);
+    state.chat = [...state.chat, { role: "assistant", text: answer.reply }].slice(-CHAT_KEEP);
   } catch (error) {
-    reply.innerHTML = "";
-    const span = document.createElement("span");
-    span.className = "error";
-    span.textContent = `Coach unavailable: ${error.message}`;
-    reply.append(span);
+    state.chat = [...state.chat, { role: "assistant", text: `Coach unavailable: ${error.message}` }].slice(-CHAT_KEEP);
   } finally {
-    $("ask-button").disabled = !LEVELS[state.level].coach;
+    setAssisting(false);
+    save();
   }
 }
 
@@ -1126,8 +1252,9 @@ function wire() {
   window.addEventListener("resize", resize);
 
   document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => { setTool(b.dataset.tool); save(); }));
-  $("color").addEventListener("input", (e) => { if (state.tools[state.tool].color) state.tools[state.tool].color = e.target.value; });
-  $("color").addEventListener("change", save);
+  // Both events: some pickers (Safari on the iPad) only send `change`, when the picker closes.
+  $("color").addEventListener("input", (e) => shareColor(state.tools, e.target.value));
+  $("color").addEventListener("change", (e) => { shareColor(state.tools, e.target.value); save(); });
   $("size").addEventListener("input", (e) => setSize(e.target.value));
   $("undo").addEventListener("click", undo);
   $("redo").addEventListener("click", redo);
@@ -1164,7 +1291,11 @@ function wire() {
   $("score-button").addEventListener("click", scoreNow);
   $("submit-button").addEventListener("click", submit);
   $("next-hint").addEventListener("click", () => scheduleGuide(0));
-  $("ask-button").addEventListener("click", () => askCoach($("question").value));
+  $("ask-button").addEventListener("click", sendChat);
+  $("question").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
+  });
+  $("paper-size").addEventListener("change", (e) => { state.paper = paperId(e.target.value); fit(); save(); });
   $("pin-form").addEventListener("submit", sendPin);
 
   $("project-button").addEventListener("click", () => toggleProjectMenu().catch((e) => flash(e.message)));
@@ -1216,7 +1347,9 @@ function wire() {
 }
 
 async function start() {
+  for (const [id, { name }] of Object.entries(PAPERS)) $("paper-size").append(new Option(name, id));
   $("paper-hint").dataset.text = $("paper-hint").textContent;
+  initPanels();
   wire();
   setUnauthorisedHandler(showPin);
   resize();
