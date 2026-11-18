@@ -81,6 +81,7 @@ with sync_playwright() as p:
     mac.click("#project-button")
     mac.select_option("#paper-size", "a4-portrait")
     mac.keyboard.press("Escape")
+    mac.wait_for_timeout(200)  # the next animation frame draws the new sheet
     check(mac.evaluate(PIXEL, [500, 1000])[:3] == [255, 255, 255], "an A4 portrait sheet reaches below the frame")
     mac.evaluate("() => window.drawingRoom.flush()")
     mac.reload(); ready(mac)
@@ -130,6 +131,54 @@ with sync_playwright() as p:
     check(mac.evaluate(COUNT) == 5, f"a stroke right before a reload is kept: {mac.evaluate(COUNT)}")
     saved(mac)
     mac.screenshot(path=f"{OUT}/14-full-paper.png")
+
+    # The save note says when the work is on the computer.
+    mac.wait_for_function("() => document.getElementById('project-status').textContent === 'Saved ✓'")
+    draw(mac, 300)
+    check(mac.text_content("#project-status") == "Saving…", "a change shows Saving…")
+    mac.wait_for_function("() => document.getElementById('project-status').textContent === 'Saved ✓'")
+    check(True, "then Saved ✓")
+
+    # Export the sheet as PNG and JPG: the sheet's size at 2 px per unit, white paper, dark strokes.
+    import io, json
+    from PIL import Image
+    mac.click("#project-button")
+    for fmt, kind in (("png", "PNG"), ("jpg", "JPEG")):
+        with mac.expect_download() as info:
+            mac.click(f"#export-{fmt}")
+        download = info.value
+        data = open(download.path(), "rb").read()
+        image = Image.open(io.BytesIO(data))
+        check(download.suggested_filename.endswith(f".{fmt}") and image.format == kind,
+              f"export {fmt}: {download.suggested_filename} is {image.format}")
+        sheet = mac.evaluate("() => window.drawingRoom.state.paper")
+        check(image.size == (2000, 1500), f"export {fmt} covers the whole {sheet} sheet: {image.size}")
+        gray = image.convert("L")
+        check(gray.getpixel((5, 5)) > 245 and gray.getextrema()[0] < 120, f"export {fmt}: white paper with dark strokes")
+
+    # Save the project to a file and open it again as a new project with the same strokes.
+    strokes = mac.evaluate(COUNT)
+    with mac.expect_download() as info:
+        mac.click("#file-save")
+    saved_file = info.value
+    content = json.loads(open(saved_file.path(), encoding="utf-8").read())
+    check(saved_file.suggested_filename.endswith(".drawing.json") and content["format"] == "drawing-room",
+          f"project file: {saved_file.suggested_filename}")
+    before = mac.evaluate("async () => (await (await fetch('/api/projects')).json()).projects.length")
+    old_id = mac.evaluate("() => window.drawingRoom.state.project.id")
+    mac.set_input_files("#file-input", saved_file.path())
+    mac.wait_for_function(f"async () => (await (await fetch('/api/projects')).json()).projects.length === {before + 1}")
+    mac.wait_for_function(f"() => window.drawingRoom.state.project.id !== '{old_id}'")
+    check(mac.evaluate(COUNT) == strokes, f"the opened file has the same {strokes} strokes")
+    check(mac.evaluate(NAME) == "Apple study" and mac.evaluate("() => window.drawingRoom.state.project.id") != old_id,
+          "the file opens as a new project with its name and strokes")
+    # Clean up the copy so the delete checks below see the same projects as before.
+    mac.once("dialog", lambda d: d.accept())
+    if mac.is_hidden("#project-menu"):
+        mac.click("#project-button")
+    mac.click("#project-delete")
+    mac.wait_for_function(f"async () => (await (await fetch('/api/projects')).json()).projects.length === {before}")
+    mac.wait_for_function("() => window.drawingRoom.state.project?.name === 'Apple study'")
 
     # Delete: the open project goes, the next one opens.
     mac.once("dialog", lambda d: d.accept())

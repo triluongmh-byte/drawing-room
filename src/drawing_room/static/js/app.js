@@ -9,9 +9,12 @@ import {
 } from "./layers.js";
 import { initPanels } from "./panels.js";
 import { DEFAULT_PAPER, PAPERS, paperId, sheetRect } from "./paper.js";
+import { downloadSheet, exportFileName } from "./export.js";
+import { FILL_RES, fillArea, toPaper, traceOutlines } from "./fill.js";
 import { settlePencil } from "./pencil.js";
+import { DEFAULT_SHAPE, SHAPES, shapeKind, shapePoints } from "./shapes.js";
 import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
-import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
+import { TOOLS, cachedPath, paintOrder, paintStroke, strokePath } from "./render.js";
 import { createRuler, dragEnd, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeHits } from "./strokes.js";
 import { COLORED, clampSize, restoreToolSettings, shareColor, stepSize } from "./tools.js";
@@ -71,6 +74,7 @@ const state = {
   gesture: null,
   marks: [], // miss regions from the last score, paper coordinates of the drawing
   paper: DEFAULT_PAPER, // the sheet's shape around the reference frame (paper.js)
+  shapeKind: DEFAULT_SHAPE, // what the shape tool draws (shapes.js)
   claudeLayer: null, // id of the layer Claude draws on, made the first time it draws
   chat: [], // [{ role: "user" | "assistant", text }] for the open project
   assisting: false, // waiting for Claude
@@ -101,18 +105,25 @@ const saver = createSaver(async () => {
     const { project } = await postJSON(`/api/projects/${id}/save`, { drawing: drawingPayload({ withReference }) });
     if (withReference) state.savedReference = reference;
     if (state.project?.id === project.id) state.project = project;
+    if (state.draftVersion === version) setSaveStatus("saved", `Saved on this computer at ${new Date(project.updated * 1000).toLocaleTimeString()}.`);
     if (state.draftVersion === version) clearDraft(); // nothing changed while saving
-    $("project-status").textContent = "";
   } catch (error) {
-    $("project-status").textContent = "not saved";
-    $("project-status").title = `Could not save: ${error.message}. It will try again on the next change.`;
+    setSaveStatus("error", `Could not save: ${error.message}. It will try again on the next change.`);
     throw error;
   }
 });
 
+/** The small save note next to the project name: "Saving…", "Saved ✓" or "Not saved". */
+function setSaveStatus(status, title = "") {
+  const el = $("project-status");
+  el.textContent = { saving: "Saving…", saved: "Saved ✓", error: "Not saved" }[status] ?? "";
+  el.dataset.status = status;
+  el.title = title;
+}
+
 function saveDevice() {
   try {
-    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool }));
+    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool, shape: state.shapeKind }));
   } catch { /* private mode or full storage: drawing still works */ }
 }
 
@@ -143,7 +154,41 @@ function save() {
   saveDevice();
   if (state.loading || !state.project) return;
   writeDraft();
+  setSaveStatus("saving", "Changes save themselves a moment after you stop.");
   saver.touch();
+}
+
+// ------------------------------------------------------------------ project files
+
+const FILE_FORMAT = "drawing-room";
+
+/** Download the open project as a .json file that "Open file" can load back. */
+async function saveProjectFile() {
+  const drawing = drawingPayload();
+  const file = { format: FILE_FORMAT, version: 1, name: state.project?.name ?? "drawing", saved: new Date().toISOString(), drawing };
+  const blob = new Blob([JSON.stringify(file)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = exportFileName(state.project?.name, "png").replace(/\.png$/, ".drawing.json");
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  flash(`Saved ${link.download}. Open it again with 🗂 → Open file.`);
+}
+
+/** Load a project file as a new project. A bare drawing (no wrapper) is accepted too. */
+async function openProjectFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { throw new Error(`${file.name} is not a drawing-room file.`); }
+  const drawing = data?.format === FILE_FORMAT ? data.drawing : data;
+  if (!drawing || typeof drawing !== "object" || !Array.isArray(drawing.layers ?? drawing.strokes)) {
+    throw new Error(`${file.name} is not a drawing-room file.`);
+  }
+  const name = (typeof data?.name === "string" && data.name) || file.name.replace(/(\.drawing)?\.json$/i, "");
+  await newProject({ name, drawing });
+  flash(`Opened ${file.name} as a new project.`);
 }
 
 /** Put a saved drawing (a project's, or the old single drawing) into the room. */
@@ -203,6 +248,7 @@ async function openProject(id) {
   }
   if (draft?.id === project.id && !recovered) clearDraft(); // made on an older version: the server has moved on
   if (recovered) { state.savedReference = undefined; save(); }
+  else setSaveStatus("saved", `Saved on this computer at ${new Date(project.updated * 1000).toLocaleTimeString()}.`);
   saveDevice();
   renderProjectButton();
 }
@@ -301,6 +347,15 @@ async function startProjects() {
   }
   try { localStorage.setItem(MIGRATED_KEY, "1"); } catch { /* fine */ }
   await openProject(openId);
+  state.shapeKind = shapeKind(device.shape);
+  for (const [id, { label, icon }] of Object.entries(SHAPES)) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.dataset.shape = id;
+    item.setAttribute("role", "menuitemradio");
+    item.innerHTML = `<span class="shape-glyph" aria-hidden="true">${icon}</span><span>${label}</span>`;
+    $("shape-menu").append(item);
+  }
   setTool(device.tool ?? legacy?.tool ?? "pencil");
   saveDevice();
 }
@@ -386,7 +441,7 @@ function paintLayer(layer, transform) {
     layerCtx.setTransform(transform);
     target = layerCtx;
   }
-  for (const stroke of layer.strokes) {
+  for (const stroke of paintOrder(layer.strokes)) {
     if (state.erasing?.removed.has(stroke)) continue;
     paintStroke(target, stroke, cachedPath(stroke));
   }
@@ -531,6 +586,43 @@ function local(event) {
   return [event.clientX - rect.left, event.clientY - rect.top];
 }
 
+/**
+ * The paint bucket: the lines on every visible layer (not shading, not other fills) are the walls; the closed area
+ * around the tap becomes a fill stroke on the active layer, under that layer's lines.
+ */
+function pourFill(px, py, layer) {
+  const sheet = sheetRect(state.paper);
+  const [x0, y0, x1, y1] = sheet;
+  if (px < x0 || py < y0 || px > x1 || py > y1) return;
+  const w = Math.ceil((x1 - x0) * FILL_RES), h = Math.ceil((y1 - y0) * FILL_RES);
+  const wallCanvas = document.createElement("canvas");
+  wallCanvas.width = w; wallCanvas.height = h;
+  const wallCtx = wallCanvas.getContext("2d", { willReadFrequently: true });
+  wallCtx.setTransform(FILL_RES, 0, 0, FILL_RES, -x0 * FILL_RES, -y0 * FILL_RES);
+  wallCtx.fillStyle = "#000";
+  for (const each of state.history.doc.layers) {
+    if (!each.visible || each.opacity <= 0) continue;
+    for (const stroke of each.strokes) {
+      if (stroke.tool === "fill" || stroke.shade || stroke.tool === "shade") continue;
+      wallCtx.fill(cachedPath(stroke)); // solid, without the pencil grain: the grain's holes would let the paint leak
+    }
+  }
+  const pixels = wallCtx.getImageData(0, 0, w, h).data;
+  const walls = new Uint8Array(w * h);
+  for (let i = 0; i < walls.length; i++) walls[i] = pixels[i * 4 + 3] > 50 ? 1 : 0;
+  const gap = Math.round(state.tools.fill.size * FILL_RES);
+  const found = fillArea(walls, w, h, (px - x0) * FILL_RES, (py - y0) * FILL_RES, gap);
+  if (!found) { flash("That is on a line. Tap inside a shape to fill it."); return; }
+  const outlines = toPaper(traceOutlines(found.area, w, h), x0, y0);
+  if (!outlines.length) return;
+  const stroke = createStroke({ layer: layer.id, tool: "fill", color: state.tools.fill.color, size: 0, opacity: 1 });
+  stroke.outlines = outlines;
+  state.history.add(stroke);
+  if (found.count > walls.length * 0.9) flash("The paint filled the whole sheet: the shape may have a gap. Undo, then raise the size to close gaps.");
+  afterChange();
+  state.dirty = true;
+}
+
 function capture(event) {
   try { canvas.setPointerCapture(event.pointerId); } catch { /* synthetic events cannot be captured */ }
 }
@@ -548,17 +640,42 @@ function startStroke(event) {
     eraseAt(px, py);
     return;
   }
+  if (state.tool === "fill") {
+    pourFill(px, py, layer);
+    return;
+  }
   const settings = state.tools[state.tool];
   state.current = createStroke({
     layer: layer.id, tool: state.tool, size: settings.size, opacity: TOOLS[state.tool].opacity,
     color: settings.color, simulatePressure: event.pointerType !== "pen",
   });
+  if (state.tool === "shape") {
+    // A shape is dragged out from where the pen went down; its outline is redrawn on every move.
+    state.current.shape = state.shapeKind;
+    state.current.simulatePressure = false;
+    state.current.from = [px, py];
+    shapeTo(px, py, event.shiftKey);
+    return;
+  }
   // A stroke that starts against the ruler is pulled onto its edge for its whole length.
   if (rulerEnabled() && snapsToRuler(state.ruler, [px, py], RULER_REACH / state.view.scale)) state.current.ruled = true;
   addEventPoint(event);
 }
 
+/** Redraw the shape being dragged so it ends at (px, py). Shift makes it even (square, circle, 15° line). */
+function shapeTo(px, py, even) {
+  const stroke = state.current;
+  stroke.points = shapePoints(stroke.shape, stroke.from, [px, py], { even })
+    .map(([x, y], i) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10, 0.5, i, 0, 0]);
+  state.dirty = true;
+}
+
 function addEventPoint(event) {
+  if (state.current.tool === "shape") {
+    const [px, py] = screenToPaper(state.view, ...local(event));
+    shapeTo(px, py, event.shiftKey);
+    return;
+  }
   const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
   for (const e of events.length ? events : [event]) {
     const [sx, sy] = local(e);
@@ -588,6 +705,14 @@ function eraseAt(px, py) {
 
 function finishStroke(cancel = false) {
   if (state.current) {
+    const shape = state.current.tool === "shape";
+    if (shape) {
+      const [ax, ay] = state.current.from, last = state.current.points.at(-1) ?? [ax, ay];
+      delete state.current.from;
+      // A tap with the shape tool, not a drag: nothing to draw.
+      if (state.current.shape !== "line" ? Math.max(...state.current.points.map((p) => Math.hypot(p[0] - ax, p[1] - ay))) < 3
+          : Math.hypot(last[0] - ax, last[1] - ay) < 3) cancel = true;
+    }
     if (!cancel && state.current.points.length) {
       state.history.add(settlePencil(state.current));
       afterChange();
@@ -749,6 +874,13 @@ function renderToolSettings() {
   size.value = String(settings.size);
   $("size-value").textContent = String(settings.size);
   $("color").hidden = !COLORED.includes(state.tool);
+  $("shape-icon").textContent = SHAPES[state.shapeKind].icon;
+  for (const item of $("shape-menu").children) {
+    const on = item.dataset.shape === state.shapeKind;
+    item.classList.toggle("active", on);
+    item.setAttribute("aria-checked", String(on));
+  }
+  if (state.tool !== "shape") $("shape-menu").hidden = true;
   if (settings.color) $("color").value = settings.color;
 }
 
@@ -1295,7 +1427,40 @@ function wire() {
   $("question").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
   });
+  // The shape tool's menu drops down under its button: tap the button to open or close it, tap a shape to pick it.
+  $("shape-menu").previousElementSibling.addEventListener("click", (e) => {
+    const menu = $("shape-menu");
+    const box = e.currentTarget.getBoundingClientRect();
+    menu.style.top = `${box.bottom + 6}px`;
+    menu.style.left = `${Math.max(85, box.left + box.width / 2)}px`;
+    menu.hidden = !menu.hidden;
+  });
+  $("shape-menu").addEventListener("click", (e) => {
+    const item = e.target.closest("[data-shape]");
+    if (!item) return;
+    state.shapeKind = shapeKind(item.dataset.shape);
+    $("shape-menu").hidden = true;
+    setTool("shape");
+    saveDevice();
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!$("shape-menu").hidden && !e.target.closest(".tool-flyout")) $("shape-menu").hidden = true;
+  });
   $("paper-size").addEventListener("change", (e) => { state.paper = paperId(e.target.value); fit(); save(); });
+  for (const format of ["png", "jpg"]) {
+    $(`export-${format}`).addEventListener("click", () => {
+      downloadSheet(state.history.doc.layers, sheetRect(state.paper), state.project?.name, format)
+        .then((file) => flash(`Saved ${file}.`))
+        .catch((e) => flash(e.message));
+    });
+  }
+  $("file-save").addEventListener("click", () => saveProjectFile().catch((e) => flash(e.message)));
+  $("file-open").addEventListener("click", () => $("file-input").click());
+  $("file-input").addEventListener("change", (e) => {
+    const [file] = e.target.files;
+    e.target.value = "";
+    if (file) openProjectFile(file).catch((error) => flash(error.message));
+  });
   $("pin-form").addEventListener("submit", sendPin);
 
   $("project-button").addEventListener("click", () => toggleProjectMenu().catch((e) => flash(e.message)));
@@ -1329,13 +1494,21 @@ function wire() {
   window.addEventListener("pagehide", () => { saver.flush().catch(() => {}); });
 
   window.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
+    // ⌘S / Ctrl+S saves now (it saves by itself anyway); ⇧ also downloads the project file.
+    if ((e.metaKey || e.ctrlKey) && key === "s") {
+      e.preventDefault();
+      if (e.shiftKey) { saveProjectFile().catch((error) => flash(error.message)); return; }
+      saver.flush().then(() => flash("Saved.")).catch((error) => flash(`Could not save: ${error.message}`));
+      return;
+    }
     if (e.target.matches("textarea, input, select")) return;
     if (e.key === "Escape" && !$("project-menu").hidden) { closeProjectMenu(); return; }
-    const key = e.key.toLowerCase();
+    if (e.key === "Escape" && !$("shape-menu").hidden) { $("shape-menu").hidden = true; return; }
     if ((e.metaKey || e.ctrlKey) && key === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); return; }
     if (e.metaKey || e.ctrlKey) return;
     if (e.code === "Space") { state.input.spaceDown = true; e.preventDefault(); return; }
-    const tools = { p: "pencil", s: "shade", i: "ink", b: "brush", e: "eraser" };
+    const tools = { p: "pencil", s: "shade", i: "ink", b: "brush", u: "shape", g: "fill", e: "eraser" };
     if (tools[key]) { setTool(tools[key]); save(); }
     else if (key === "[" || key === "]") setSize(stepSize(state.tool, state.tools[state.tool].size, key === "]" ? 1 : -1));
     else if (key === "l") toggleRuler();

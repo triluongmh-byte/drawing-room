@@ -64,15 +64,34 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   work. New (named straight away), open any project from the list, rename it, or delete it. Changes save themselves
   about a second after you stop, and a copy kept in the browser covers a reload or a closed tab before that. A drawing
   from before projects becomes "My first drawing".
+  Each project lives in `~/.drawing-room/projects` (or `--data DIR`) as `<id>.json` plus `<id>.meta.json`. The note next
+  to the project name shows *Saving…* and then *Saved ✓*; ⌘S / Ctrl+S saves at once.
+- **Files and images** (🗂 → File / Image): *Save file* downloads the project as a `.drawing.json` (⇧⌘S / Ctrl+Shift+S)
+  to keep, back up or move to another computer, and *Open file…* loads one back as a new project. *PNG* and *JPG* save
+  the whole sheet at 2 pixels per paper unit: visible layers at their opacity on white paper, without the reference,
+  the score boxes or the ruler.
 - **Paper**: a white sheet on a dark desk with a fine grid. Pick its shape in the project menu (🗂 → Paper): 4:3 (the
   reference frame), A4 landscape or portrait, square, 16:9 or 9:16. The reference and scoring frame always sits in the
   middle of the sheet (shown as a faint outline on the bigger sheets), and strokes are clipped to the sheet. At levels
   3–4 size and position are ignored, so you can draw anywhere on it.
-- **Tools**: pencil, shade, ink, color brush and an eraser that removes whole strokes. Every tool works on the active
-  layer and keeps its own size; the colour you pick is shared by all of them (the slider and swatch next to the tools;
+- **Tools**: pencil, shade, ink, color brush, shapes, a paint bucket and an eraser that removes whole strokes. Every
+  tool works on the active layer and keeps its own size; the colour you pick is shared by all of them (the slider and swatch next to the tools;
   `[` / `]` change the size). Strokes follow pen pressure (via vendored
   [perfect-freehand](https://github.com/steveruizok/perfect-freehand), MIT) and are stored as vectors: every point keeps
   x, y, pressure, time and tilt, so drawings can be replayed and analysed. Undo/redo (⌘Z / ⇧⌘Z).
+- **Shapes** (U): tap the shape button, pick a line, rectangle, ellipse or triangle in the menu under it, and drag from one corner to the
+  other, like Paint. Hold Shift for a square, a circle, an even triangle or a line in 15° steps. A shape is an even
+  line in the shared colour and size, with sharp corners; it holds paint, can be erased and undone, and is never scored
+  (the score is about what you draw by hand).
+
+  ![Shapes: a rectangle, a square, a filled triangle, an ellipse and a snapped line](docs/screenshots/17-shapes.png)
+- **Fill** (G, the paint bucket): tap inside a closed shape and it fills with the colour, like Paint. Every visible
+  layer's lines are the walls (shading and other fills are not), and the fill goes on the active layer under its lines,
+  tucked a little under them so no white seam shows. Its size is how wide a gap in the lines (in paper units) it still
+  treats as closed, so a sketchy outline holds the paint; if it floods the whole sheet, undo and raise it. A fill is
+  stored as vector outlines, undone, erased (tap it with the eraser), saved and exported like a stroke, and never scored.
+
+  ![Two circles filled with the paint bucket, one closing a small gap](docs/screenshots/16-fill.png)
 - **Pencil** (P): graphite with paper grain. Press lightly for a thin, pale line and harder for a thick, dark one.
   Lay an Apple Pencil or Wacom pen low on its side and the stroke turns into shading: a broad, light, grainy band
   that darkens as you go over it again. With a mouse or trackpad (no tilt), use **Shade** (S) for the same band.

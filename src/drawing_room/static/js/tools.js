@@ -6,11 +6,15 @@ export const TOOLS = {
   shade: { label: "Shade", color: "#3b3936", size: 26, min: 8, max: 70, thinning: 0.3, smoothing: 0.7, streamline: 0.5, grain: "shade" },
   ink: { label: "Ink", color: "#141312", size: 4.5, min: 1, max: 16, opacity: 1, thinning: 0.6, smoothing: 0.6, streamline: 0.45 },
   brush: { label: "Color", color: "#e0604a", size: 22, min: 4, max: 80, opacity: 0.45, thinning: 0.25, smoothing: 0.6, streamline: 0.5 },
+  // The paint bucket: its "size" is how wide a gap in the lines (paper units) it still treats as closed.
+  fill: { label: "Fill", color: "#e0604a", size: 2, min: 0, max: 10, opacity: 1 },
+  // Lines, rectangles, ellipses and triangles: an even line (no pressure taper) with sharp corners.
+  shape: { label: "Shapes", color: "#141312", size: 3, min: 1, max: 16, opacity: 1, thinning: 0, smoothing: 0.1, streamline: 0 },
   eraser: { label: "Eraser", size: 12, min: 4, max: 60 },
 };
 
 /** Tools with a colour of their own (the eraser has none). */
-export const COLORED = ["pencil", "shade", "ink", "brush"];
+export const COLORED = ["pencil", "shade", "ink", "brush", "shape", "fill"];
 
 const HEX = /^#[0-9a-f]{6}$/i;
 

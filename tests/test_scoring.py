@@ -90,6 +90,16 @@ def test_shading_never_counts_even_on_a_scored_layer():
     assert scoring.stroke_stats([line, shading])["stroke_count"] == 1
 
 
+def test_paint_bucket_fills_never_count():
+    fill = {**ellipse_stroke(layer="line"), "scored": True, "tool": "fill"}
+    assert scoring.score(BUILTINS["circle"], [fill], 1)["shape"] == 0
+
+
+def test_shape_tool_strokes_never_count():
+    shape = {**ellipse_stroke(layer="line"), "scored": True, "tool": "shape"}
+    assert scoring.score(BUILTINS["circle"], [shape], 1)["shape"] == 0
+
+
 def test_line_art_extraction_handles_transparency_and_thick_lines():
     image = Image.new("RGBA", (400, 300), (0, 0, 0, 0))
     ImageDraw.Draw(image).line([(50, 150), (350, 150)], fill=(0, 0, 0, 255), width=12)

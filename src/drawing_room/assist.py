@@ -21,6 +21,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from drawing_room import coach as coach_module
+from drawing_room import scoring as scoring_module
 from drawing_room.references import PAPER_H, PAPER_W, png_bytes
 
 DRAWING_FILE = "drawing.png"
@@ -38,7 +39,14 @@ program. The person tells you an idea ("draw a box in two-point perspective", "a
 the mushroom") and you draw it for them as geometric shapes, or you give advice when they ask a question. They draw by
 hand wherever they want to and ask you for the rest.
 
-Reply in the same language the person writes in. Keep the reply short (at most about 80 words), plain text, no markdown.
+Reply in the same language the person writes in, and match how they talk: if they are casual, be casual back, using
+the same way of addressing each other they use (for example Vietnamese "mày/tao" or "fen" when they write that way;
+"bạn/mình" when they are polite). No profanity aimed at anyone. Keep the reply short (at most about 80 words), plain text, no markdown.
+
+When there is a reference, the app's scorer has scored the drawing and you get its numbers and regions: M1, M2...
+are reference lines the person has not drawn yet, S1, S2... are strokes of theirs where the reference has no line.
+When they ask about a score or an id like "S1", answer from those numbers and boxes (where it is and what to do about
+it); never invent or recompute scores.
 
 Coordinates are paper units: x to the right, y DOWN, origin at the top left of the reference frame, which is
 1000 x 750. The sheet can be bigger than the frame (its bounds are given). The image drawing.png shows the sheet with a
@@ -231,8 +239,9 @@ def parse_sheet(sheet) -> tuple[float, float, float, float]:
     return x0, y0, x1, y1
 
 
-def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet) -> Image.Image:
-    """The sheet with a labelled grid, the reference frame and reference (faint red), and every stroke so far."""
+def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet, regions=None) -> Image.Image:
+    """The sheet with a labelled grid, the reference frame and reference (faint red), every stroke so far, and the
+    score's regions (orange boxes with their ids: M1 missed, S1 stray), as the person sees them after Score."""
     x0, y0, x1, y1 = sheet
     scale = min(1.0, 1200 / max(x1 - x0, y1 - y0))
     size = (max(1, round((x1 - x0) * scale)), max(1, round((y1 - y0) * scale)))
@@ -266,11 +275,45 @@ def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet) -> 
             draw.ellipse([x - 2, y - 2, x + 2, y + 2], fill=color)
         elif points:
             draw.line(points, fill=color, width=2, joint="curve")
+    for region in regions or []:
+        box = region.get("box")
+        if not (isinstance(box, (list, tuple)) and len(box) == 4):
+            continue
+        a, b = at(float(box[0]), float(box[1])), at(float(box[2]), float(box[3]))
+        draw.rectangle([a, b], outline=(230, 150, 20), width=2)
+        draw.text((a[0] + 3, a[1] + 2), str(region.get("id", "")), fill=(200, 110, 0))
     return image
 
 
+def score_lines(score: dict | None) -> list[str]:
+    """The machine score in words for the prompt: the numbers and every region with its id, place and box."""
+    if not isinstance(score, dict):
+        return []
+    lines = ["", "Machine score of the drawing as it is now (deterministic; never change or invent these):",
+             f"Shape {score.get('shape', 0):.1f}/10, proportion {score.get('proportion', 0):.1f}/10 "
+             f"(recall {score.get('recall', 0):.2f}: share of the reference the person has drawn; precision "
+             f"{score.get('precision', 0):.2f}: share of their scored ink that is on the reference)."]
+    regions = [*(score.get("misses") or []), *(score.get("strays") or [])]
+    if regions:
+        lines.append("Regions, also boxed in orange with their ids in drawing.png (the person sees the same boxes "
+                     "after pressing Score; ids are recounted now, so they can differ a little if they drew since):")
+        for region in regions:
+            box = region.get("box") or [0, 0, 0, 0]
+            what = ("missing: a reference line here that the person has not drawn yet" if region.get("kind") == "missing"
+                    else "stray: the person's scored ink here where the reference has no line")
+            lines.append(f"- {region.get('id')}: {what}, {scoring_module.where(box)}, box x {box[0]:g}-{box[2]:g}, "
+                         f"y {box[1]:g}-{box[3]:g}")
+    else:
+        lines.append("No missed or stray regions.")
+    if (score.get("next_step") or {}).get("text"):
+        lines.append(f"Next step the program suggests: {score['next_step']['text']}")
+    lines.append("Only strokes on scored (★) layers count; shading, fills, shapes from the shape tool and your own "
+                 "shapes do not.")
+    return lines
+
+
 def build_prompt(message: str, history: list[dict], sheet, level: int, reference_name: str | None,
-                 image_note: str) -> str:
+                 image_note: str, score: dict | None = None) -> str:
     x0, y0, x1, y1 = sheet
     parts = [
         f"Level: {coach_module.LEVEL_NAMES.get(level, level)}",
@@ -278,6 +321,7 @@ def build_prompt(message: str, history: list[dict], sheet, level: int, reference
         f"Sheet bounds: x {x0:g} to {x1:g}, y {y0:g} to {y1:g}. Reference frame: x 0 to {PAPER_W}, y 0 to {PAPER_H}.",
         image_note,
         "In drawing.png the person's strokes are black and the shapes you drew before are blue.",
+        *score_lines(score),
     ]
     turns = [turn for turn in history[-MAX_HISTORY:] if isinstance(turn, dict) and turn.get("text")]
     if turns:
@@ -311,13 +355,14 @@ def _ask_api(prompt: str, images: dict[str, bytes], client) -> str:
 
 def assist(reference_image: Image.Image | None, reference_name: str | None, strokes: list[dict], sheet,
            level: int, message: str, history: list[dict] | None = None, runner=subprocess.run,
-           api_client=None) -> dict:
+           api_client=None, score: dict | None = None) -> dict:
     """Ask Claude to draw or advise. Returns ``{reply, strokes, clear_previous, skipped, route}``."""
     message = (message or "").strip()[:MAX_MESSAGE]
     if not message:
         raise AssistError("say what you would like Claude to draw or explain")
     sheet = parse_sheet(sheet)
-    images = {DRAWING_FILE: png_bytes(drawing_image(reference_image, strokes, sheet))}
+    regions = [*(score or {}).get("misses", []), *(score or {}).get("strays", [])] if isinstance(score, dict) else []
+    images = {DRAWING_FILE: png_bytes(drawing_image(reference_image, strokes, sheet, regions))}
     if reference_image is not None:
         images[REFERENCE_FILE] = png_bytes(reference_image.convert("RGB"))
     history = history if isinstance(history, list) else []
@@ -327,7 +372,7 @@ def assist(reference_image: Image.Image | None, reference_name: str | None, stro
 
             api_client = anthropic.Anthropic()
         note = "The images are attached: " + ", ".join(images) + "."
-        text, route = _ask_api(build_prompt(message, history, sheet, level, reference_name, note), images,
+        text, route = _ask_api(build_prompt(message, history, sheet, level, reference_name, note, score), images,
                                api_client), "api"
     else:
         workdir = Path(tempfile.mkdtemp(prefix="drawing-room-assist-"))
@@ -336,7 +381,7 @@ def assist(reference_image: Image.Image | None, reference_name: str | None, stro
                 (workdir / name).write_bytes(data)
             note = "Read " + " and ".join(str(workdir / name) for name in images) + " before answering."
             try:
-                text = coach_module.ask_cli(build_prompt(message, history, sheet, level, reference_name, note),
+                text = coach_module.ask_cli(build_prompt(message, history, sheet, level, reference_name, note, score),
                                             workdir, runner, system_prompt=SYSTEM_PROMPT)
             except coach_module.CoachError as failure:
                 raise AssistError(str(failure)) from None

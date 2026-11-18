@@ -3,6 +3,7 @@
 
 export const MIN_POINT_DISTANCE = 0.75;
 
+import { insideOutlines } from "./fill.js";
 import { paintedSize } from "./pencil.js";
 
 let nextId = 1;
@@ -58,6 +59,8 @@ export function distanceToSegment(px, py, ax, ay, bx, by) {
 
 /** Whether a circle of `radius` at (x, y) touches the stroke's centre line (widened by half its painted width). */
 export function strokeHits(stroke, x, y, radius) {
+  // A fill is hit anywhere inside it.
+  if (stroke.tool === "fill") return insideOutlines(stroke.outlines ?? [], x, y);
   const reach = radius + paintedSize(stroke) / 2;
   const box = strokeBounds(stroke);
   if (!box || x < box.x0 - reach || x > box.x1 + reach || y < box.y0 - reach || y > box.y1 + reach) return false;

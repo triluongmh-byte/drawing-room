@@ -242,10 +242,15 @@ class App:
         """The chat: Claude draws shapes for an idea, or answers a question."""
         level = parse_level(request)
         strokes = parse_strokes(request)
-        image = name = None
+        image = name = score = None
         if request.get("reference") is not None:
-            _, image, name = parse_reference(request)
-        kwargs = {}
+            reference, image, name = parse_reference(request)
+            # The chat knows the score and its M/S regions, so "what is wrong with S1?" has an answer.
+            try:
+                score = scoring.score(reference, strokes, level)
+            except Exception:  # noqa: BLE001 - a score that cannot be made never blocks the chat
+                score = None
+        kwargs = {"score": score}
         if self.coach_runner is not None:
             kwargs["runner"] = self.coach_runner
         if self.coach_api_client is not None:

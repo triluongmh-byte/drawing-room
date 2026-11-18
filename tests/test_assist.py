@@ -108,6 +108,19 @@ def test_assist_route_draws_shapes_with_claude(running, tmp_path):
     assert "CAD" in arguments[arguments.index("--append-system-prompt") + 1]
 
 
+def test_assist_knows_the_score_and_its_regions(running, tmp_path):
+    runner = AnswerRunner({"reply": "S1 là nét thừa.", "shapes": []})
+    srv = running(app=App(coach_runner=runner, projects=ProjectStore(tmp_path)))
+    stray = {"layer": "line", "scored": True, "tool": "ink", "points": [[50, 50, 0.5, 0], [150, 60, 0.5, 9]]}
+    status, body, _ = call(srv, "POST", "/api/assist", {
+        "level": 2, "reference": {"id": "circle"}, "strokes": [stray], "message": "chổ S1 bị sao vậy fen?"})
+    assert status == 200
+    prompt = runner.calls[0]["prompt"]
+    assert "Shape 0.0/10" in prompt
+    assert "- S1: stray" in prompt and "in the top left" in prompt
+    assert "- M1: missing" in prompt
+
+
 def test_assist_works_without_a_reference_and_needs_a_message(running, tmp_path):
     srv = running(app=App(coach_runner=AnswerRunner({"reply": "Hi", "shapes": []}), projects=ProjectStore(tmp_path)))
     status, body, _ = call(srv, "POST", "/api/assist", {"level": 2, "strokes": [], "message": "hello"})

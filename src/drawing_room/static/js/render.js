@@ -19,7 +19,26 @@ function outlineToPath(outline) {
   return path;
 }
 
+/** A fill's outlines as one path; holes wind the other way, so the default nonzero fill leaves them open. */
+function fillPath(outlines) {
+  const path = new Path2D();
+  for (const loop of outlines ?? []) {
+    if (loop.length < 3) continue;
+    path.moveTo(loop[0][0], loop[0][1]);
+    for (let i = 1; i < loop.length; i++) path.lineTo(loop[i][0], loop[i][1]);
+    path.closePath();
+  }
+  return path;
+}
+
+/** Within a layer, fills go under its lines, as paint poured into the shapes; otherwise strokes keep their order. */
+export function paintOrder(strokes) {
+  if (!strokes.some((stroke) => stroke.tool === "fill")) return strokes;
+  return [...strokes.filter((stroke) => stroke.tool === "fill"), ...strokes.filter((stroke) => stroke.tool !== "fill")];
+}
+
 export function strokePath(stroke, { last = false } = {}) {
+  if (stroke.tool === "fill") return fillPath(stroke.outlines);
   const tool = TOOLS[stroke.tool] || TOOLS.ink;
   // A pencil laid on its side shades: broad and soft rather than a pressure-thinned line.
   const tilted = stroke.tool === "pencil" && stroke.shade;
@@ -39,8 +58,9 @@ const cache = new WeakMap();
 /** A finished stroke's Path2D, computed once. */
 export function cachedPath(stroke) {
   let entry = cache.get(stroke);
-  if (!entry || entry.count !== stroke.points.length) {
-    entry = { count: stroke.points.length, path: strokePath(stroke, { last: true }) };
+  const count = stroke.tool === "fill" ? -1 : stroke.points.length;
+  if (!entry || entry.count !== count) {
+    entry = { count, path: strokePath(stroke, { last: true }) };
     cache.set(stroke, entry);
   }
   return entry.path;
