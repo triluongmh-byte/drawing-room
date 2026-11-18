@@ -12,6 +12,7 @@ import { DEFAULT_PAPER, PAPERS, paperId, sheetRect } from "./paper.js";
 import { downloadSheet, exportFileName } from "./export.js";
 import { FILL_RES, fillArea, toPaper, traceOutlines } from "./fill.js";
 import { settlePencil } from "./pencil.js";
+import { drawingColorAt, imageColorAt } from "./picker.js";
 import { DEFAULT_SHAPE, SHAPES, shapeKind, shapePoints } from "./shapes.js";
 import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
 import { TOOLS, cachedPath, paintOrder, paintStroke, strokePath } from "./render.js";
@@ -586,6 +587,41 @@ function local(event) {
   return [event.clientX - rect.left, event.clientY - rect.top];
 }
 
+/** Use a picked colour for every tool, and go back to the tool used before the picker. */
+function usePickedColor(color, where) {
+  shareColor(state.tools, color);
+  $("color").value = color;
+  if (state.tool === "picker") setTool(state.toolBeforePicker ?? "pencil");
+  else renderToolSettings();
+  save();
+  flash(`Picked ${color} from ${where}.`);
+}
+
+/** The colour at a paper point: the drawing's paint there, or the reference underneath where there is none. */
+function pickFromPaper(px, py) {
+  const { color, painted } = drawingColorAt(state.history.doc.layers, px, py);
+  if (!painted && referenceVisible(state.underlayState) && state.underlay?.naturalWidth && px >= 0 && py >= 0 && px < PAPER_W && py < PAPER_H) {
+    const fromReference = imageColorAt(state.underlay, (px / PAPER_W) * state.underlay.naturalWidth, (py / PAPER_H) * state.underlay.naturalHeight);
+    if (fromReference) { usePickedColor(fromReference, "the reference"); return; }
+  }
+  usePickedColor(color, painted ? "the drawing" : "the paper");
+}
+
+/** Tapping the reference card with the picker (or Alt) takes the picture's own colour. */
+function pickFromReferenceCard(event) {
+  if (state.tool !== "picker" && !event.altKey) return;
+  const image = event.currentTarget;
+  if (!image.naturalWidth) return;
+  event.preventDefault();
+  // object-fit: contain — the picture is centred inside the element at one scale.
+  const box = image.getBoundingClientRect();
+  const scale = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight);
+  const u = (event.clientX - box.left - (box.width - image.naturalWidth * scale) / 2) / scale;
+  const v = (event.clientY - box.top - (box.height - image.naturalHeight * scale) / 2) / scale;
+  const color = imageColorAt(image, u, v);
+  if (color) usePickedColor(color, "the reference");
+}
+
 /**
  * The paint bucket: the lines on every visible layer (not shading, not other fills) are the walls; the closed area
  * around the tap becomes a fill stroke on the active layer, under that layer's lines.
@@ -630,6 +666,12 @@ function capture(event) {
 function startStroke(event) {
   const [sx, sy] = local(event);
   const [px, py] = screenToPaper(state.view, sx, sy);
+  // The picker, or Alt with a colour tool, takes the colour under the pen instead of drawing. It only reads, so it
+  // works on a locked or hidden layer too.
+  if (state.tool === "picker" || (event.altKey && COLORED.includes(state.tool))) {
+    pickFromPaper(px, py);
+    return;
+  }
   const layer = activeLayer();
   if (!canDraw(layer)) {
     flash(`“${layer.name}” is ${layer.locked ? "locked" : "hidden"}. Unlock or show it, or pick another layer.`);
@@ -855,6 +897,8 @@ function redo() { if (state.history.redo()) { state.marks = []; afterChange(); }
 
 function setTool(tool) {
   if (!TOOLS[tool]) tool = "pencil";
+  // The picker remembers the tool it came from, to hand back to it after one pick.
+  if (tool === "picker" && state.tool !== "picker") state.toolBeforePicker = state.tool;
   state.tool = tool;
   document.querySelectorAll("[data-tool]").forEach((b) => {
     b.classList.toggle("active", b.dataset.tool === tool);
@@ -873,7 +917,8 @@ function renderToolSettings() {
   size.min = String(spec.min); size.max = String(spec.max);
   size.value = String(settings.size);
   $("size-value").textContent = String(settings.size);
-  $("color").hidden = !COLORED.includes(state.tool);
+  $("color").hidden = !COLORED.includes(state.tool) && state.tool !== "picker";
+  size.closest("label").hidden = state.tool === "picker";
   $("shape-icon").textContent = SHAPES[state.shapeKind].icon;
   for (const item of $("shape-menu").children) {
     const on = item.dataset.shape === state.shapeKind;
@@ -1428,6 +1473,7 @@ function wire() {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
   });
   // The shape tool's menu drops down under its button: tap the button to open or close it, tap a shape to pick it.
+  $("reference-image").addEventListener("click", pickFromReferenceCard);
   $("shape-menu").previousElementSibling.addEventListener("click", (e) => {
     const menu = $("shape-menu");
     const box = e.currentTarget.getBoundingClientRect();
@@ -1508,7 +1554,7 @@ function wire() {
     if ((e.metaKey || e.ctrlKey) && key === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); return; }
     if (e.metaKey || e.ctrlKey) return;
     if (e.code === "Space") { state.input.spaceDown = true; e.preventDefault(); return; }
-    const tools = { p: "pencil", s: "shade", i: "ink", b: "brush", u: "shape", g: "fill", e: "eraser" };
+    const tools = { p: "pencil", s: "shade", i: "ink", b: "brush", u: "shape", g: "fill", k: "picker", e: "eraser" };
     if (tools[key]) { setTool(tools[key]); save(); }
     else if (key === "[" || key === "]") setSize(stepSize(state.tool, state.tools[state.tool].size, key === "]" ? 1 : -1));
     else if (key === "l") toggleRuler();

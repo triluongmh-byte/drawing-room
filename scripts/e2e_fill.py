@@ -195,6 +195,31 @@ with sync_playwright() as p:
         body: JSON.stringify({level: 2, reference: {id: 'circle'}, strokes})}); return (await r.json()).shape; }""")
     check(score == 0, f"shapes do not score: {score}")
 
+    # The colour picker: take the triangle's red, then go back to the shape tool.
+    COLOR = "() => window.drawingRoom.state.tools.pencil.color"
+    page.evaluate("() => { const s = window.drawingRoom.state; for (const t of Object.values(s.tools)) if (t.color) t.color = '#2255cc'; }")
+    page.click("[data-tool=shape]")
+    page.keyboard.press("Escape")
+    page.keyboard.press("k")
+    check(page.evaluate("() => window.drawingRoom.state.tool") == "picker", "K picks the colour picker")
+    tap(page, 750, 250)
+    check(page.evaluate(COLOR) == "#e0403a", f"the picker takes the fill's colour: {page.evaluate(COLOR)}")
+    check(page.evaluate("() => window.drawingRoom.state.tool") == "shape", "and hands back to the shape tool")
+    check(page.input_value("#color") == "#e0403a", "the swatch shows it")
+    # Alt-click with a drawing tool picks too, here the bare paper.
+    page.evaluate("""() => { const canvas = document.getElementById('paper'); const rect = canvas.getBoundingClientRect();
+      const [sx, sy] = window.drawingRoom.paperToScreen(950, 700);
+      for (const name of ['pointerdown', 'pointerup']) canvas.dispatchEvent(new PointerEvent(name, {pointerId: 9, pointerType: 'mouse',
+        clientX: rect.left + sx, clientY: rect.top + sy, bubbles: true, cancelable: true, button: 0, buttons: name === 'pointerup' ? 0 : 1,
+        isPrimary: true, altKey: true})); }""")
+    page.wait_for_timeout(100)
+    check(page.evaluate(COLOR) == "#ffffff" and len(page.evaluate(SHAPES)) == 5, "Alt-click picks the paper's white and draws nothing")
+    # From the reference card: its picture's own colour.
+    page.click("[data-tool=picker]")
+    page.click("#reference-image", position={"x": 5, "y": 5})
+    check(page.evaluate(COLOR) == "#ffffff" and page.evaluate("() => window.drawingRoom.state.tool") == "shape",
+          "the reference card gives its colour and hands back")
+
     check(not errors, f"no console errors: {errors}")
     browser.close()
 

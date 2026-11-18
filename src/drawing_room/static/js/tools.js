@@ -10,6 +10,8 @@ export const TOOLS = {
   fill: { label: "Fill", color: "#e0604a", size: 2, min: 0, max: 10, opacity: 1 },
   // Lines, rectangles, ellipses and triangles: an even line (no pressure taper) with sharp corners.
   shape: { label: "Shapes", color: "#141312", size: 3, min: 1, max: 16, opacity: 1, thinning: 0, smoothing: 0.1, streamline: 0 },
+  // The colour picker has no size; it hands back to the tool used before it.
+  picker: { label: "Picker", size: 1, min: 1, max: 1 },
   eraser: { label: "Eraser", size: 12, min: 4, max: 60 },
 };
 

@@ -74,7 +74,7 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   reference frame), A4 landscape or portrait, square, 16:9 or 9:16. The reference and scoring frame always sits in the
   middle of the sheet (shown as a faint outline on the bigger sheets), and strokes are clipped to the sheet. At levels
   3–4 size and position are ignored, so you can draw anywhere on it.
-- **Tools**: pencil, shade, ink, color brush, shapes, a paint bucket and an eraser that removes whole strokes. Every
+- **Tools**: pencil, shade, ink, color brush, shapes, a paint bucket, a colour picker and an eraser that removes whole strokes. Every
   tool works on the active layer and keeps its own size; the colour you pick is shared by all of them (the slider and swatch next to the tools;
   `[` / `]` change the size). Strokes follow pen pressure (via vendored
   [perfect-freehand](https://github.com/steveruizok/perfect-freehand), MIT) and are stored as vectors: every point keeps
@@ -85,6 +85,10 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   (the score is about what you draw by hand).
 
   ![Shapes: a rectangle, a square, a filled triangle, an ellipse and a snapped line](docs/screenshots/17-shapes.png)
+- **Colour picker** (K, the eyedropper): tap the drawing to take its colour (the visible layers as painted, without the
+  score boxes), or the bare paper where the reference shows through to take the reference's own colour. Tap the
+  reference card to pick straight from the picture. One pick, then you are back on the tool you had; Alt-click (⌥)
+  picks without switching tools at all. The colour goes to every tool.
 - **Fill** (G, the paint bucket): tap inside a closed shape and it fills with the colour, like Paint. Every visible
   layer's lines are the walls (shading and other fills are not), and the fill goes on the active layer under its lines,
   tucked a little under them so no white seam shows. Its size is how wide a gap in the lines (in paper units) it still
