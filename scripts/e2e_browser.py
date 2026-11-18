@@ -53,6 +53,7 @@ with sync_playwright() as p:
     page.evaluate("() => localStorage.clear()")
     page.reload()
     page.wait_for_function("() => window.drawingRoom.state.references.length > 0")
+    page.click("[data-panel-toggle=coach]")  # score and coach float over the paper; open them
 
     # Level 0 drill: straight line between two dots, auto-scored.
     page.select_option("#level", "0")
@@ -102,6 +103,23 @@ with sync_playwright() as p:
     page.wait_for_function("() => !document.querySelector('#coach-reply .thinking')", timeout=300000)
     reply = page.inner_text("#coach-reply")
     print(f"coach ({time.time() - t0:.0f}s):", reply)
+    check_claude = page.evaluate("() => window.drawingRoom.state.chat.length")
+    assert check_claude == 2, f"the question and the answer are in the chat: {check_claude}"
+
+    # Claude draws: an idea in the chat becomes shapes on Claude's own layer, which is not scored.
+    page.fill("#question", "Draw a light blue construction circle centred at x 500, y 375 with radius 150, and a "
+                           "horizontal construction line through its centre from x 300 to x 700.")
+    t0 = time.time()
+    page.click("#ask-button")
+    page.wait_for_function("() => !document.querySelector('#coach-reply .thinking')", timeout=300000)
+    drawn = page.evaluate("""() => { const s = window.drawingRoom.state; const l = s.history.doc.layers.find(l => l.id === s.claudeLayer);
+      return l ? { name: l.name, scored: l.scored, strokes: l.strokes.length } : null; }""")
+    print(f"claude draws ({time.time() - t0:.0f}s):", drawn, "-", page.evaluate("() => window.drawingRoom.state.chat.at(-1).text"))
+    assert drawn and drawn["strokes"] >= 2 and not drawn["scored"] and drawn["name"] == "Claude", drawn
+    page.screenshot(path=f"{OUT}/15-claude-draws.png")
+    page.keyboard.press("Meta+z") if sys.platform == "darwin" else page.keyboard.press("Control+z")
+    left = page.evaluate("() => { const s = window.drawingRoom.state; return s.history.doc.layers.find(l => l.id === s.claudeLayer).strokes.length; }")
+    assert left == 0, f"one undo takes back everything Claude drew for that message: {left}"
     page.screenshot(path=f"{OUT}/03-level2-circle-coach.png")
 
     # Level 3: draw the circle small and off-centre; alignment means no penalty.

@@ -142,3 +142,18 @@ test("history is capped", () => {
   assert.equal(undos, 3);
   assert.equal(getLayer(history.doc, "sketch").strokes.length, 2);
 });
+
+test("Claude's strokes for one message are one undo step, and can replace what it drew before", () => {
+  const history = new History(createDocument());
+  const claude = history.addLayer({ name: "Claude", scored: false });
+  history.addMany([stroke(claude.id, "a"), stroke(claude.id, "b")]);
+  assert.deepEqual(getLayer(history.doc, claude.id).strokes.map((s) => s.id), ["a", "b"]);
+  history.addMany([stroke(claude.id, "c")], { replace: claude.id });
+  assert.deepEqual(getLayer(history.doc, claude.id).strokes.map((s) => s.id), ["c"]);
+  history.undo();
+  assert.deepEqual(getLayer(history.doc, claude.id).strokes.map((s) => s.id), ["a", "b"]);
+  history.undo();
+  assert.equal(getLayer(history.doc, claude.id).strokes.length, 0);
+  history.redo();
+  assert.equal(getLayer(history.doc, claude.id).strokes.length, 2);
+});

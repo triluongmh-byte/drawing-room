@@ -37,3 +37,10 @@ export function stepSize(tool, current, direction) {
   const step = Math.max(0.5, Math.round(((max - min) / 10) * 2) / 2);
   return clampSize(tool, current + Math.sign(direction) * step);
 }
+
+/** One colour for every tool that has one, so switching from the pencil to the ink keeps the colour just picked. */
+export function shareColor(settings, color) {
+  if (!HEX.test(color ?? "")) return settings;
+  for (const tool of COLORED) settings[tool].color = color.toLowerCase();
+  return settings;
+}

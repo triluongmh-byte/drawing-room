@@ -64,6 +64,22 @@ def test_coach_runs_cli_in_a_temp_dir_with_both_images(result):
     assert not seen["cwd"].exists()  # cleaned up afterwards
 
 
+def test_cli_talks_utf8_so_vietnamese_questions_work(result):
+    seen = {}
+
+    def runner(arguments, input, cwd, **kwargs):
+        seen.update(prompt=input, kwargs=kwargs)
+        # What the real pipe does: encode the prompt with the encoding it was given.
+        input.encode(kwargs.get("encoding") or "cp1252")
+        out = json.dumps({"type": "result", "is_error": False, "result": "Vẽ nửa dưới trước (M1)."})
+        return SimpleNamespace(stdout=out, stderr="", returncode=0)
+
+    answer = coach.coach(render(BUILTINS["circle"]), "Circle", half_circle(), result, 1, "cứu với??", runner=runner)
+    assert answer["reply"] == "Vẽ nửa dưới trước (M1)."
+    assert "cứu với??" in seen["prompt"]
+    assert seen["kwargs"]["encoding"] == "utf-8"
+
+
 def test_cli_error_becomes_coach_error(result):
     def runner(*args, **kwargs):
         out = json.dumps({"type": "result", "is_error": True, "result": "not logged in"})

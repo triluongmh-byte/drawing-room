@@ -39,6 +39,27 @@ export class History {
     });
   }
 
+  /** Several strokes (what Claude drew for one message) as one undoable step. With `replace`, that layer's old
+   *  strokes are removed in the same step. */
+  addMany(strokes, { replace = null } = {}) {
+    const layers = strokes.map((stroke) => this._layer(stroke.layer));
+    const replaced = replace ? this._layer(replace) : null;
+    const old = replaced ? [...replaced.strokes] : [];
+    this._run({
+      apply: () => {
+        if (replaced) replaced.strokes.splice(0, replaced.strokes.length);
+        strokes.forEach((stroke, i) => layers[i].strokes.push(stroke));
+      },
+      revert: () => {
+        strokes.forEach((stroke, i) => {
+          const index = layers[i].strokes.lastIndexOf(stroke);
+          if (index >= 0) layers[i].strokes.splice(index, 1);
+        });
+        if (replaced) replaced.strokes.unshift(...old);
+      },
+    });
+  }
+
   _remove(items) {
     this._run({
       apply: () => {
