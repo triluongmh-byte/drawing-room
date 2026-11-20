@@ -61,3 +61,18 @@ export function gridLines([x0, y0, x1, y1], scale, minGap = 10) {
   }
   return lines;
 }
+
+/**
+ * How to fit `boxes` ({x0, y0, x1, y1}, paper units) into a w x h picture with a margin: { scale, dx, dy } so that
+ * a paper point maps to (x * scale + dx, y * scale + dy). Small content is not blown up past `minSpan` units across,
+ * so a single dot stays a dot. Null when there is nothing to show.
+ */
+export function fitBoxes(boxes, w, h, { margin = 0.12, minSpan = 80 } = {}) {
+  const good = boxes.filter((b) => b && [b.x0, b.y0, b.x1, b.y1].every(Number.isFinite));
+  if (!good.length) return null;
+  const x0 = Math.min(...good.map((b) => b.x0)), y0 = Math.min(...good.map((b) => b.y0));
+  const x1 = Math.max(...good.map((b) => b.x1)), y1 = Math.max(...good.map((b) => b.y1));
+  const spanX = Math.max(x1 - x0, minSpan), spanY = Math.max(y1 - y0, minSpan * (h / w));
+  const scale = Math.min((w * (1 - 2 * margin)) / spanX, (h * (1 - 2 * margin)) / spanY);
+  return { scale, dx: w / 2 - ((x0 + x1) / 2) * scale, dy: h / 2 - ((y0 + y1) / 2) * scale };
+}

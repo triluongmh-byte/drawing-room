@@ -258,3 +258,32 @@ def test_notes_are_numbered_orange_pins_in_the_picture():
     scale = image.width / 1000
     r, g, b = image.getpixel((round(500 * scale) - 6, round(375 * scale)))
     assert r > 200 and 90 < g < 150 and b < 80
+
+
+def test_labels_are_real_text_with_a_checked_size_and_alignment():
+    strokes, skipped = assist.shapes_to_strokes([
+        {"type": "label", "at": [100, 100], "text": "Điểm tụ trái\\nVP", "size": 99, "align": "center", "layer": "Notes"},
+        {"type": "label", "at": [10, 10], "text": "  1   Kẻ chân trời ", "align": "sideways", "width": 3, "dash": True},
+        {"type": "label", "at": [10, 10], "text": "   "},
+        {"type": "label", "at": [10, 10]},
+        {"type": "label", "at": [10, 10], "text": "a\nb\nc\nd"},
+    ])
+    assert strokes[0]["text"] == "Điểm tụ trái\nVP" and strokes[0]["size"] == 48.0 and strokes[0]["align"] == "center"
+    assert strokes[0]["points"] == [[100.0, 100.0]] and strokes[0]["layer"] == "Notes"
+    assert strokes[1]["text"] == "1 Kẻ chân trời" and strokes[1]["size"] == 18.0 and strokes[1]["align"] == "left"
+    assert "width" not in strokes[1] and "dash" not in strokes[1]
+    assert strokes[2]["text"] == "a\nb\nc"  # three lines at most
+    assert len(skipped) == 2 and all("label needs text" in s for s in skipped)
+
+
+def test_the_prompt_asks_for_explanations_on_the_drawing():
+    for words in ['"type": "label"', "EXPLAIN ON THE DRAWING", 'layer of yours called "Notes"']:
+        assert words in assist.SYSTEM_PROMPT, words
+
+
+def test_labels_show_in_what_claude_sees():
+    image = assist.drawing_image(None, [{"text": "HELLO", "size": 40, "assistant": True, "points": [[400, 300]]}],
+                                 (0, 0, 1000, 750))
+    scale = image.width / 1000
+    box = image.crop((round(390 * scale), round(280 * scale), round(560 * scale), round(320 * scale)))
+    assert (70, 130, 220) in [c for _, c in box.getcolors(100000)]

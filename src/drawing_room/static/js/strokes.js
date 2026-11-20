@@ -71,6 +71,15 @@ export function insidePolygon(points, x, y) {
  * or, for a filled area, lies inside it.
  */
 export function strokeHits(stroke, x, y, radius) {
+  if (stroke.text && stroke.points.length) {
+    // A label: roughly the box its text covers.
+    const [lx, ly] = stroke.points[0];
+    const size = stroke.size || 18;
+    const lines = String(stroke.text).split("\n");
+    const width = Math.max(...lines.map((line) => line.length)) * size * 0.58;
+    const left = stroke.align === "center" ? lx - width / 2 : stroke.align === "right" ? lx - width : lx;
+    return x >= left - radius && x <= left + width + radius && y >= ly - size * 0.7 - radius && y <= ly + size * 1.25 * (lines.length - 0.5) + radius;
+  }
   if (stroke.fill && stroke.points.length >= 3 && insidePolygon(stroke.points, x, y)) return true;
   const reach = radius + paintedSize(stroke) / 2;
   const box = strokeBounds(stroke);

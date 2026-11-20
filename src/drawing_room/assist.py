@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from drawing_room import coach as coach_module
 from drawing_room.references import MAX_IMAGE_PIXELS, PAPER_H, PAPER_W, png_bytes
@@ -39,6 +39,9 @@ COORD_LIMIT = 6000
 STEP = 3.0  # paper units between sampled points
 STYLES = ("line", "construction")
 MAX_LAYER_NAME = 24
+MAX_LABEL = 80  # characters in a label Claude writes on the drawing
+LABEL_SIZES = (10.0, 48.0, 18.0)  # smallest, largest and default text height, paper units
+ALIGNS = ("left", "center", "right")
 FILLABLE = ("rect", "circle", "ellipse")  # plus a closed polyline
 
 SYSTEM_PROMPT = """You are a drawing assistant inside a hand-drawing practice app, a bit like the helper in a CAD
@@ -64,6 +67,10 @@ Shapes (all numbers in paper units, angles in degrees, clockwise because y point
 - {"type": "ellipse", "c": [x, y], "rx": rx, "ry": ry, "rotation": 0}
 - {"type": "arc", "c": [x, y], "rx": rx, "ry": ry, "start": 0, "end": 180, "rotation": 0}
 - {"type": "bezier", "points": [p0, c1, c2, p3, c4, c5, p6, ...]}  (cubic segments joined end to end)
+- {"type": "label", "at": [x, y], "text": "...", "size": 18, "align": "left"}  (text written on the drawing: "at" is
+  the middle of its first line's left end, or its centre / right end with "align"; "size" is the letter height, 10 to
+  48; at most 80 characters, "\\n" for up to 3 lines; "color" works as for lines. It is real text: never draw
+  letters or digits out of lines.)
 Every shape may add "style": "line" (finished dark line, the default) or "construction" (light blue guide line the
 person draws over and later hides), and "color": "#rrggbb" for a coloured line.
 Use construction lines for guides, axes, boxes and perspective lines; use line for what should look finished.
@@ -76,6 +83,17 @@ in the order you first use them, the first one lowest.
 Set "clear_previous": true only when the person asks you to redo or remove what you drew before; it empties every
 layer of yours.
 When the person only asks a question, answer with "shapes": []. Use at most 150 shapes.
+
+EXPLAIN ON THE DRAWING. When you draw something to teach it, or explain points of a drawing, write the explanation
+onto the picture so the student does not have to look back and forth between the chat and the paper:
+- A short label (at most 6 words) beside every point that matters: each vanishing point ("Điểm tụ trái"), the horizon,
+  the nearest corner, a corner you construct ("Góc sau: 2 tia cắt nhau"), a light source, a shadow point. Put it just
+  beside the point, never over a line, and give it a thin leader line (width 1, opacity 0.6) when it sits further off.
+- Number the construction in the order to draw it: a bold number ("1", "2", …, size 22) next to each line or point of
+  that step, and a few words after it ("1 Kẻ chân trời"). The same colour as the lines it explains.
+- Labels go on a layer of yours called "Notes", emitted last so they sit on top. Dark text "#1f2328", or the colour of
+  what they name. Keep them inside the sheet and apart from one another.
+- Then the reply refers to the numbers ("bước 2: …") instead of describing positions again.
 
 PERSPECTIVE ILLUSTRATIONS. When the person asks you to draw a perspective illustration (a box in 1, 2 or 3-point
 perspective, a horizon, vanishing points), the student must be able to read it at a glance, and hiding the layer
@@ -208,6 +226,9 @@ def shape_points(shape: dict) -> list[tuple[float, float]]:
         start, end = (0.0, 360.0) if kind != "arc" else (_number(shape.get("start", 0), "start"),
                                                           _number(shape.get("end", 180), "end"))
         return _ellipse(cx, cy, rx, ry, rotation, start, end)
+    if kind == "label":
+        _label_text(shape)
+        return [_point(shape.get("at"), "at")]
     if kind == "bezier":
         raw = shape.get("points")
         if not isinstance(raw, list):
@@ -229,6 +250,19 @@ def _layer_name(value) -> str | None:
         return None
     name = " ".join(value.split())[:MAX_LAYER_NAME].strip()
     return name or None
+
+
+def _label_text(shape: dict) -> str:
+    """A label's text: at most 3 lines and MAX_LABEL characters. Raises ValueError when it is empty."""
+    raw = shape.get("text")
+    if not isinstance(raw, str):
+        raise ValueError("a label needs text")
+    lines = [" ".join(line.split()) for line in raw.replace("\\n", "\n").split("\n")]
+    text = "\n".join(line for line in lines if line)[:MAX_LABEL]
+    lines = text.split("\n")[:3]
+    if not "".join(lines):
+        raise ValueError("a label needs text")
+    return "\n".join(lines)
 
 
 def _line_look(shape: dict) -> dict:
@@ -271,6 +305,14 @@ def shapes_to_strokes(shapes) -> tuple[list[dict], list[str]]:
         if shape.get("fill") is True and _closed(shape):
             stroke["fill"] = True
         stroke.update(_line_look(shape))
+        if shape.get("type") == "label":
+            low, high, default = LABEL_SIZES
+            size = shape.get("size")
+            ok = isinstance(size, (int, float)) and not isinstance(size, bool) and math.isfinite(size)
+            stroke.update(text=_label_text(shape), size=round(min(high, max(low, float(size))), 1) if ok else default,
+                          align=shape.get("align") if shape.get("align") in ALIGNS else "left")
+            stroke.pop("width", None)
+            stroke.pop("dash", None)
         strokes.append(stroke)
     if len(shapes) > MAX_SHAPES:
         skipped.append(f"only the first {MAX_SHAPES} shapes were drawn")
@@ -363,7 +405,17 @@ def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet, not
         if stroke.get("fill") is True and len(points) >= 3:
             draw.polygon(points, fill=(205, 222, 245) if stroke.get("assistant") else (215, 215, 215))
     for stroke in strokes or []:
-        if stroke.get("fill") is True:
+        text = stroke.get("text")
+        points = stroke.get("points") or []
+        if isinstance(text, str) and text and points and len(points[0]) >= 2:
+            x, y = at(float(points[0][0]), float(points[0][1]))
+            size = stroke.get("size") if isinstance(stroke.get("size"), (int, float)) else LABEL_SIZES[2]
+            font = ImageFont.load_default(size=max(8, round(float(size) * scale)))
+            anchor = {"center": "mm", "right": "rm"}.get(stroke.get("align"), "lm")
+            draw.multiline_text((x, y), text[:MAX_LABEL], font=font, anchor=anchor if "\n" not in text else "la",
+                                fill=(70, 130, 220) if stroke.get("assistant") else (30, 30, 30))
+    for stroke in strokes or []:
+        if stroke.get("fill") is True or stroke.get("text"):
             continue
         points = [at(float(p[0]), float(p[1])) for p in stroke.get("points", []) if len(p) >= 2]
         color = (70, 130, 220) if stroke.get("assistant") else (30, 30, 30)
