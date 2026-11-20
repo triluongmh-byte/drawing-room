@@ -76,6 +76,7 @@ const state = {
   shapeKind: "rect", // the shape the Shapes tool drags out (shapes.js)
   shapeDash: false, // whether shapes come out dashed
   flyout: null, // "write" | "paint" | "eraser" while the tool flyout is open
+  attachments: [], // pictures waiting to go with the next chat message: { name, full, thumb } data URLs
   project: null, // { id, name, created, updated, strokes } of the open project
   projects: null, // the project list, as last fetched
   loading: false, // while a project is being put into the room: changes are not saves
@@ -194,7 +195,12 @@ function applyDrawing(saved) {
   $("paper-size").value = state.paper;
   state.claudeLayer = typeof saved?.claudeLayer === "string" && getLayer(state.history.doc, saved.claudeLayer) ? saved.claudeLayer : null;
   state.chat = Array.isArray(saved?.chat)
-    ? saved.chat.filter((m) => m && typeof m.text === "string" && (m.role === "user" || m.role === "assistant")).slice(-CHAT_KEEP)
+    ? saved.chat.filter((m) => m && typeof m.text === "string" && (m.role === "user" || m.role === "assistant"))
+      .map((m) => {
+        // Only small picture thumbnails are kept with a message.
+        const images = Array.isArray(m.images) ? m.images.filter((src) => typeof src === "string" && src.startsWith("data:image/") && src.length < 400000).slice(0, MAX_ATTACH) : [];
+        return { role: m.role, text: m.text, ...(images.length ? { images } : {}) };
+      }).slice(-CHAT_KEEP)
     : [];
   renderChat();
   state.marks = [];
@@ -1300,6 +1306,7 @@ function setLevel(level) {
   $("guide-panel").hidden = !config.guide;
   $("ask-button").disabled = !config.coach || state.assisting;
   $("question").disabled = !config.coach;
+  $("attach-input").disabled = !config.coach;
   $("question").placeholder = level === 0 ? "Warm-up drills are just you and the pen."
     : level === 4 ? "Claude stays quiet until you press Submit."
     : "Ask Claude to draw something, or ask for advice…";
@@ -1430,14 +1437,108 @@ function chatWidth() {
   return chat && !chat.hidden && !CHAT_SHEET.matches ? chat.offsetWidth + 16 : 0;
 }
 
-function bubble(role, text, extra = "") {
-  return Object.assign(document.createElement("div"), { className: `msg ${role} ${extra}`.trim(), textContent: text });
+function bubble(role, text, extra = "", images = []) {
+  const message = Object.assign(document.createElement("div"), { className: `msg ${role} ${extra}`.trim() });
+  if (images.length) {
+    const row = Object.assign(document.createElement("div"), { className: "msg-images" });
+    for (const src of images) row.append(Object.assign(document.createElement("img"), { src, alt: "Attached picture" }));
+    message.append(row);
+  }
+  if (text) message.append(document.createTextNode(text));
+  return message;
+}
+
+// ------------------------------------------------------------------ pictures attached to the chat
+
+const MAX_ATTACH = 4; // per message, as the server allows
+const ATTACH_SIDE = 1600; // pixels: what Claude gets
+const THUMB_SIDE = 240; // pixels: what stays in the chat history
+
+/** A picture drawn onto white, scaled to fit `side`, as a JPEG data URL. */
+function scaledPicture(image, side, quality) {
+  const scale = Math.min(1, side / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = Object.assign(document.createElement("canvas"), {
+    width: Math.max(1, Math.round(image.naturalWidth * scale)), height: Math.max(1, Math.round(image.naturalHeight * scale)),
+  });
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, canvas.width, canvas.height);
+  g.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+function readPicture(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("not a picture")); };
+    image.src = url;
+  });
+}
+
+async function attachFiles(files) {
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) { flash(`${file.name}: attach a picture (PNG, JPG, GIF, WebP).`); continue; }
+    if (state.attachments.length >= MAX_ATTACH) { flash(`Up to ${MAX_ATTACH} pictures per message.`); break; }
+    try {
+      const image = await readPicture(file);
+      state.attachments.push({ name: file.name, full: scaledPicture(image, ATTACH_SIDE, 0.92), thumb: scaledPicture(image, THUMB_SIDE, 0.8) });
+    } catch {
+      flash(`${file.name}: could not read that picture.`);
+    }
+  }
+  renderAttachments();
+  if (state.attachments.length) $("question").focus();
+}
+
+function renderAttachments() {
+  const box = $("chat-attachments");
+  box.innerHTML = "";
+  box.hidden = !state.attachments.length;
+  state.attachments.forEach((picture, index) => {
+    const item = Object.assign(document.createElement("div"), { className: "attachment", title: picture.name });
+    const remove = Object.assign(document.createElement("button"), { type: "button", innerHTML: icon("x", 12), title: `Remove ${picture.name}` });
+    remove.setAttribute("aria-label", `Remove ${picture.name}`);
+    remove.addEventListener("click", () => { state.attachments.splice(index, 1); renderAttachments(); });
+    item.append(Object.assign(document.createElement("img"), { src: picture.thumb, alt: picture.name }), remove);
+    box.append(item);
+  });
+}
+
+/** Pictures can be pasted into the message, or dropped anywhere on the page: the chat opens to take them. */
+function wireAttachments() {
+  $("attach-input").addEventListener("change", (event) => { attachFiles([...event.target.files]); event.target.value = ""; });
+  $("question").addEventListener("paste", (event) => {
+    const files = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
+    if (!files.length) return;
+    event.preventDefault();
+    attachFiles(files);
+  });
+  let depth = 0;
+  const carriesFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
+  window.addEventListener("dragenter", (event) => {
+    if (!carriesFiles(event)) return;
+    depth += 1;
+    panels.open("chat");
+    $("coach-panel").classList.add("drop");
+  });
+  window.addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; $("coach-panel").classList.remove("drop"); } });
+  window.addEventListener("dragover", (event) => { if (carriesFiles(event)) event.preventDefault(); });
+  window.addEventListener("drop", (event) => {
+    if (!event.dataTransfer?.files.length) return;
+    event.preventDefault();
+    depth = 0;
+    $("coach-panel").classList.remove("drop");
+    if (!LEVELS[state.level].coach) return flash("Claude is off at this level.");
+    attachFiles([...event.dataTransfer.files]);
+  });
 }
 
 function renderChat(pending = null) {
   const log = $("coach-reply");
   log.innerHTML = "";
-  for (const message of state.chat) log.append(bubble(message.role, message.text));
+  for (const message of state.chat) log.append(bubble(message.role, message.text, "", message.images ?? []));
   if (pending) log.append(pending);
   if (!state.chat.length && !pending) {
     log.append(Object.assign(document.createElement("p"), {
@@ -1450,8 +1551,8 @@ function renderChat(pending = null) {
   log.scrollTop = log.scrollHeight;
 }
 
-function pushChat(role, text) {
-  state.chat = [...state.chat, { role, text }].slice(-CHAT_KEEP);
+function pushChat(role, text, images = []) {
+  state.chat = [...state.chat, { role, text, ...(images.length ? { images } : {}) }].slice(-CHAT_KEEP);
   renderChat();
   save();
 }
@@ -1484,14 +1585,19 @@ function claudeStrokes(drawn, layerId) {
 
 async function sendChat() {
   const text = $("question").value.trim();
-  if (!text || state.assisting || !LEVELS[state.level].coach) return;
-  const history = state.chat.slice(-12);
+  const pictures = state.attachments;
+  if ((!text && !pictures.length) || state.assisting || !LEVELS[state.level].coach) return;
+  // Claude gets the conversation as text; the pictures go with this message only.
+  const history = state.chat.slice(-12).map(({ role, text: said }) => ({ role, text: said }));
   $("question").value = "";
-  pushChat("user", text);
+  state.attachments = [];
+  renderAttachments();
+  pushChat("user", text, pictures.map((picture) => picture.thumb));
   setAssisting(true);
   try {
     const answer = await postJSON("/api/assist", {
       level: state.level, reference: referencePayload(), sheet: sheetRect(state.paper), message: text, history,
+      attachments: pictures.map((picture) => picture.full),
       strokes: strokesForScoring(state.history.doc, serializeStroke)
         .map((stroke) => ({ ...stroke, assistant: stroke.layer === state.claudeLayer })),
     });
@@ -1706,6 +1812,7 @@ async function start() {
   }
   panels = initPanels();
   wire();
+  wireAttachments();
   setUnauthorisedHandler(showPin);
   resize();
   requestAnimationFrame(frame);

@@ -95,7 +95,9 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   "add a centre line" or "sketch the cap", and Claude draws it as lines, circles, ellipses, arcs and curves on its own
   **Claude** layer: light blue construction lines to draw over, or finished lines. Draw by hand wherever you want and
   ask Claude for the rest; ask "redo it" to replace what it drew. One undo takes back everything Claude drew for a
-  message. The Claude layer is not scored (★ off). Ask questions in the same chat for advice. The chat is kept with the
+  message. The Claude layer is not scored (★ off). Ask questions in the same chat for advice. Attach pictures for
+  Claude to look at (up to 4 a message): the paperclip, paste one into the message, or drop one anywhere on the page.
+  They are scaled to 1600 px and sent with that message only; a small thumbnail stays in the chat. The chat is kept with the
   project. It is off in the warm-up drills, and at level 4 until you submit; the review then appears in the chat.
 - **Layers**: a strip along the bottom, one card with a thumbnail per layer, the bottom of the stack on the left (‹ ›
   move the active layer down or up). The strip keeps one width; more layers scroll sideways (a sideways wheel, a

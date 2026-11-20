@@ -15,7 +15,7 @@ const NAMES = [
   "image", "layers", "target", "message-circle", "folder", "chevron-down", "plus", "eye", "eye-off",
   "lock", "lock-open", "star", "chevron-left", "chevron-right", "x", "upload", "send", "check",
   "dumbbell", "route", "scan-line", "graduation-cap", "file", "eraser",
-  "shapes", "slash", "square", "circle", "triangle", "diamond", "arrow-up-right",
+  "paperclip", "shapes", "slash", "square", "circle", "triangle", "diamond", "arrow-up-right",
 ];
 
 const icons = {};

@@ -167,9 +167,18 @@
           <button class="btn btn-ghost btn-icon-sm text-muted-foreground" data-panel-close="chat" title="Hide the chat" aria-label="Hide the chat"><i data-icon="x" data-size="16"></i></button>
         </div>
         <div id="coach-reply" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5" aria-live="polite"></div>
-        <form class="flex items-end gap-2" id="coach-panel" onsubmit="return false">
-          <textarea id="question" class="input max-h-36 flex-1" rows="2" placeholder="Ask Claude to draw something, or ask for advice…"></textarea>
-          <button id="ask-button" class="btn btn-default btn-icon" type="button" title="Send (Enter)" aria-label="Send"><i data-icon="send" data-size="16"></i></button>
+        <!-- The composer: pictures waiting to go, the message, then attach on the left and send on the right. -->
+        <form class="composer" id="coach-panel" onsubmit="return false">
+          <div id="chat-attachments" class="flex flex-wrap gap-2 px-2.5 pt-2.5" aria-label="Pictures to send" hidden></div>
+          <textarea id="question" class="composer-input" rows="2" placeholder="Ask Claude to draw something, or for advice…"></textarea>
+          <div class="flex items-center gap-1.5 px-1.5 pb-1.5">
+            <label id="attach-button" class="btn btn-ghost btn-icon-sm cursor-pointer text-muted-foreground hover:text-foreground" title="Attach a picture for Claude to look at (or paste one, or drop it here)" aria-label="Attach a picture">
+              <i data-icon="paperclip" data-size="16"></i>
+              <input id="attach-input" type="file" accept="image/*" multiple hidden>
+            </label>
+            <span class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">Enter sends · Shift+Enter new line</span>
+            <button id="ask-button" class="btn btn-default btn-icon-sm" type="button" title="Send (Enter)" aria-label="Send"><i data-icon="send" data-size="15"></i></button>
+          </div>
         </form>
       </aside>
 
