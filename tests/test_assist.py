@@ -134,3 +134,59 @@ def test_assist_uses_the_api_when_given_a_client():
     sent = client.beta.messages.kwargs
     assert "CAD" in sent["system"]
     assert [c["text"] for c in sent["messages"][0]["content"] if c["type"] == "text"][0] == "Image: drawing.png"
+
+
+def _data_url(image, fmt="PNG"):
+    import base64
+    import io
+    buffer = io.BytesIO()
+    image.save(buffer, format=fmt)
+    return f"data:image/{fmt.lower()};base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def test_attached_pictures_go_to_claude_with_the_drawing(running, tmp_path):
+    from PIL import Image
+    runner = AnswerRunner({"reply": "Đẹp đó.", "shapes": []})
+    srv = running(app=App(coach_runner=runner, projects=ProjectStore(tmp_path)))
+    photo = _data_url(Image.new("RGB", (40, 30), "red"), "JPEG")
+    status, body, _ = call(srv, "POST", "/api/assist", {
+        "level": 2, "strokes": [], "message": "thầy coi hình này", "attachments": [photo, photo]})
+    assert status == 200 and body["reply"] == "Đẹp đó."
+    run = runner.calls[0]
+    assert run["files"] == ["attachment-1.png", "attachment-2.png", "drawing.png"]
+    assert "attached 2 pictures" in run["prompt"] and "attachment-2.png" in run["prompt"]
+    assert "not the sheet" in run["prompt"]
+
+
+def test_a_picture_alone_is_a_message():
+    from PIL import Image
+    answer = assist.assist(None, None, [], None, 2, "   ", runner=AnswerRunner({"reply": "Got it", "shapes": []}),
+                           attachments=[assist.prepare_attachment(_data_url(Image.new("RGB", (8, 8))))])
+    assert answer["reply"] == "Got it"
+
+
+def test_attachments_are_checked_flattened_and_scaled_down():
+    from PIL import Image
+    import io
+    big = assist.prepare_attachment(_data_url(Image.new("RGBA", (3200, 1600), (0, 0, 0, 0))))
+    image = Image.open(io.BytesIO(big))
+    assert image.size == (1600, 800) and image.mode == "RGB"
+    assert image.getpixel((5, 5)) == (255, 255, 255)  # transparency becomes white paper
+    for bad in [None, "hello", "data:text/plain;base64,aGk=", "data:image/png;base64,bm90IGFuIGltYWdl"]:
+        with pytest.raises(ValueError):
+            assist.prepare_attachment(bad)
+
+
+def test_bad_or_too_many_attachments_are_refused(running, tmp_path):
+    srv = running(app=App(coach_runner=AnswerRunner({"reply": "Hi", "shapes": []}), projects=ProjectStore(tmp_path)))
+    status, body, _ = call(srv, "POST", "/api/assist", {"level": 2, "strokes": [], "message": "x",
+                                                         "attachments": ["data:image/png;base64,AAAA"]})
+    assert status == 400 and "attached picture" in body["error"]
+    status, body, _ = call(srv, "POST", "/api/assist", {"level": 2, "strokes": [], "message": "x", "attachments": ["a"] * 5})
+    assert status == 400 and "at most 4" in body["error"]
+
+
+def test_attachments_are_not_logged():
+    from drawing_room.server import redact
+    assert redact({"message": "hi", "attachments": ["data:image/png;base64,AAAA", 3]})["attachments"] == [
+        "<26 chars>", "<not a string>"]

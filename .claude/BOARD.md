@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **Chat pictures + composer** (feat/chat-pictures): attach, paste or drop pictures for Claude to look at; a tidy shadcn composer; menus and panels 85% see-through.
 - **Dashed shapes** (feat/dashed-shapes): a Solid / Dashed toggle in the Shapes flyout; dashes scale with the line size.
 
 ## Ready for Deploy

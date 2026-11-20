@@ -68,6 +68,9 @@ def redact(request):
     strokes = clean.get("strokes")
     if isinstance(strokes, list):
         clean["strokes"] = summarise_strokes(strokes)
+    attachments = clean.get("attachments")
+    if isinstance(attachments, list):
+        clean["attachments"] = [f"<{len(a)} chars>" if isinstance(a, str) else "<not a string>" for a in attachments]
     drawing = clean.get("drawing")
     if isinstance(drawing, dict):
         # A project save: keep the shape of the drawing, not its strokes or image data.
@@ -245,7 +248,14 @@ class App:
         image = name = None
         if request.get("reference") is not None:
             _, image, name = parse_reference(request)
-        kwargs = {}
+        raw = request.get("attachments") or []
+        if not isinstance(raw, list) or len(raw) > assist_module.MAX_ATTACHMENTS:
+            raise ApiError(400, f"attach at most {assist_module.MAX_ATTACHMENTS} pictures to a message")
+        try:
+            attachments = [assist_module.prepare_attachment(value) for value in raw]
+        except ValueError as bad:
+            raise ApiError(400, f"could not read an attached picture: {bad}") from None
+        kwargs = {"attachments": attachments} if attachments else {}
         if self.coach_runner is not None:
             kwargs["runner"] = self.coach_runner
         if self.coach_api_client is not None:

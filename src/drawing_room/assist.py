@@ -11,6 +11,8 @@ the reference alone. It is reached the same two ways as the coach (``claude`` co
 from __future__ import annotations
 
 import json
+import base64
+import io
 import math
 import re
 import shutil
@@ -21,11 +23,13 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from drawing_room import coach as coach_module
-from drawing_room.references import PAPER_H, PAPER_W, png_bytes
+from drawing_room.references import MAX_IMAGE_PIXELS, PAPER_H, PAPER_W, png_bytes
 
 DRAWING_FILE = "drawing.png"
 REFERENCE_FILE = "reference.png"
 MAX_MESSAGE = 1500
+MAX_ATTACHMENTS = 4  # pictures the person can attach to one chat message
+ATTACHMENT_SIDE = 1600  # pixels: attached pictures are scaled down to fit this square
 MAX_HISTORY = 12
 MAX_SHAPES = 200
 MAX_POINTS = 40000
@@ -269,6 +273,35 @@ def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet) -> 
     return image
 
 
+def prepare_attachment(data_url) -> bytes:
+    """A picture attached in the chat (a ``data:image/...;base64,`` URL): checked, flattened onto white and scaled
+    to at most ATTACHMENT_SIDE pixels a side, as PNG. Raises ValueError when it is not a picture we can read."""
+    if not isinstance(data_url, str) or not data_url.startswith("data:image/") or "," not in data_url:
+        raise ValueError("send a picture as a data:image URL")
+    try:
+        image = Image.open(io.BytesIO(base64.b64decode(data_url.split(",", 1)[1], validate=False)))
+        if image.width * image.height > MAX_IMAGE_PIXELS:
+            raise ValueError("the picture is too large")
+        image.load()
+    except ValueError:
+        raise
+    except Exception:  # not an image, truncated, or a decompression bomb
+        raise ValueError("it is not a picture that can be read") from None
+    rgba = image.convert("RGBA")
+    flat = Image.new("RGB", rgba.size, "white")
+    flat.paste(rgba, mask=rgba.split()[3])
+    flat.thumbnail((ATTACHMENT_SIDE, ATTACHMENT_SIDE))
+    return png_bytes(flat)
+
+
+def attachment_note(names: list[str]) -> str:
+    if not names:
+        return ""
+    return (f" The person also attached {len(names)} picture{'s' if len(names) > 1 else ''} of their own: "
+            + ", ".join(names) + ". Look at them: it may be a reference to draw from, a photo, or a drawing to "
+            "comment on. They are not the sheet; only drawing.png shows the sheet.")
+
+
 def build_prompt(message: str, history: list[dict], sheet, level: int, reference_name: str | None,
                  image_note: str) -> str:
     x0, y0, x1, y1 = sheet
@@ -311,22 +344,29 @@ def _ask_api(prompt: str, images: dict[str, bytes], client) -> str:
 
 def assist(reference_image: Image.Image | None, reference_name: str | None, strokes: list[dict], sheet,
            level: int, message: str, history: list[dict] | None = None, runner=subprocess.run,
-           api_client=None) -> dict:
-    """Ask Claude to draw or advise. Returns ``{reply, strokes, clear_previous, skipped, route}``."""
+           api_client=None, attachments: list[bytes] | None = None) -> dict:
+    """Ask Claude to draw or advise. Returns ``{reply, strokes, clear_previous, skipped, route}``.
+
+    ``attachments`` are PNG pictures the person attached to the message (see prepare_attachment)."""
+    attachments = list(attachments or [])[:MAX_ATTACHMENTS]
     message = (message or "").strip()[:MAX_MESSAGE]
+    if not message and attachments:
+        message = "Here is a picture." if len(attachments) == 1 else "Here are some pictures."
     if not message:
         raise AssistError("say what you would like Claude to draw or explain")
     sheet = parse_sheet(sheet)
     images = {DRAWING_FILE: png_bytes(drawing_image(reference_image, strokes, sheet))}
     if reference_image is not None:
         images[REFERENCE_FILE] = png_bytes(reference_image.convert("RGB"))
+    attached = [f"attachment-{i}.png" for i in range(1, len(attachments) + 1)]
+    images.update(zip(attached, attachments))
     history = history if isinstance(history, list) else []
     if api_client is not None or coach_module.use_api():
         if api_client is None:
             import anthropic
 
             api_client = anthropic.Anthropic()
-        note = "The images are attached: " + ", ".join(images) + "."
+        note = "The images are attached: " + ", ".join(images) + "." + attachment_note(attached)
         text, route = _ask_api(build_prompt(message, history, sheet, level, reference_name, note), images,
                                api_client), "api"
     else:
@@ -334,7 +374,8 @@ def assist(reference_image: Image.Image | None, reference_name: str | None, stro
         try:
             for name, data in images.items():
                 (workdir / name).write_bytes(data)
-            note = "Read " + " and ".join(str(workdir / name) for name in images) + " before answering."
+            note = ("Read " + " and ".join(str(workdir / name) for name in images) + " before answering."
+                    + attachment_note(attached))
             try:
                 text = coach_module.ask_cli(build_prompt(message, history, sheet, level, reference_name, note),
                                             workdir, runner, system_prompt=SYSTEM_PROMPT)
