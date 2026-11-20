@@ -28,6 +28,11 @@ const DEVICE_KEY = "drawing-room:device"; // per device: the open project and ea
 const DRAFT_KEY = "drawing-room:draft";
 const RULER_REACH = 28; // screen pixels: a stroke starting this close to the ruler follows it
 const HANDLE_RADIUS = 16; // screen pixels
+// The practice side (levels, references, scoring) is put away for now: the app is free drawing on blank paper.
+// Open the page with `?practice` to bring it back (the end-to-end checks do).
+const PRACTICE = new URLSearchParams(location.search).has("practice");
+const FREE_LEVEL = 2; // free drawing behaves like level 2 with no reference: Claude and the ruler on, no steps
+
 /** What each level is called in the practice menu, and what it changes. */
 const LEVEL_INFO = {
   0: { name: "Warm-up drills", icon: "dumbbell", text: "Lines, circles and ellipses between dots. Scored after every stroke." },
@@ -169,7 +174,8 @@ function applyDrawing(saved) {
   setReferenceOpacity(state.underlayState, saved?.underlayOpacity ?? state.underlayState.opacity);
   $("opacity").value = String(state.underlayState.opacity);
   state.reference = null;
-  if (saved?.reference?.kind === "upload" && saved.reference.dataUrl) state.reference = saved.reference;
+  if (!PRACTICE) { /* free drawing: whatever reference was saved stays in the file but is not shown */ }
+  else if (saved?.reference?.kind === "upload" && saved.reference.dataUrl) state.reference = saved.reference;
   else if (saved?.reference?.kind === "builtin") {
     const meta = state.references.find((ref) => ref.id === saved.reference.id);
     if (meta) state.reference = { kind: "builtin", id: meta.id, name: meta.name, meta };
@@ -185,7 +191,7 @@ function applyDrawing(saved) {
   state.marks = [];
   state.current = null;
   state.erasing = null;
-  const level = Number.isInteger(saved?.level) && LEVELS[saved.level] ? saved.level : 1;
+  const level = !PRACTICE ? FREE_LEVEL : Number.isInteger(saved?.level) && LEVELS[saved.level] ? saved.level : 1;
   $("level").value = String(level);
   setLevel(level);
   renderLayers();
@@ -953,6 +959,7 @@ function renderLayers() {
 
   const reference = document.createElement("li");
   reference.className = "reference-row";
+  reference.hidden = !PRACTICE;
   const locked = state.underlayState.locked || !state.reference;
   const picture = state.reference
     ? Object.assign(document.createElement("img"), { className: "thumb", src: referenceUrl(false), alt: "" })
@@ -1506,6 +1513,13 @@ function wire() {
   $("opacity").addEventListener("input", (e) => { setReferenceOpacity(state.underlayState, e.target.value); state.dirty = true; });
   $("opacity").addEventListener("change", save);
   $("layer-add").addEventListener("click", addLayer);
+  // An ordinary mouse wheel scrolls the layers strip sideways; a sideways wheel or a trackpad already does.
+  $("layers").addEventListener("wheel", (event) => {
+    const list = $("layers");
+    if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY) || list.scrollWidth <= list.clientWidth) return;
+    event.preventDefault();
+    list.scrollLeft += event.deltaY * (event.deltaMode === 1 ? 32 : 1);
+  }, { passive: false });
   $("layer-delete").addEventListener("click", deleteLayer);
   $("layer-up").addEventListener("click", () => moveLayer(1));
   $("layer-down").addEventListener("click", () => moveLayer(-1));
@@ -1595,6 +1609,12 @@ async function start() {
   setTimeout(() => $("paper-hint").classList.add("faded"), 6000);
   hydrateIcons();
   buildLevelList();
+  if (!PRACTICE) {
+    for (const el of [$("mode-button"), ...document.querySelectorAll('[data-panel-toggle="reference"], [data-panel-toggle="coach"]')]) {
+      el.hidden = true;
+      el.dataset.off = "";
+    }
+  }
   panels = initPanels();
   wire();
   setUnauthorisedHandler(showPin);

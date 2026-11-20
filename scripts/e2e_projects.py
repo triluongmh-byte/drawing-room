@@ -60,7 +60,7 @@ with sync_playwright() as p:
         page = context.new_page()
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(URL)
+        page.goto(URL + "?practice")
         ready(page)
         return page
 
@@ -150,6 +150,22 @@ with sync_playwright() as p:
 
     top = mac.eval_on_selector_all("header > *:not([hidden]):not(select)", "els => { const mids = els.map(e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }); return Math.max(...mids) - Math.min(...mids); }")
     check(top < 8, "the toolbar is still one row at 1180 px")
+
+    # Without ?practice the app is free drawing: no practice menu, no score or reference panels, and a project
+    # saved with a reference opens on blank paper (the reference stays in the file).
+    mac.eval_on_selector("#reference", "el => { el.value = 'line'; el.dispatchEvent(new Event('change')); }")
+    saved(mac)
+    free = mac.context.new_page()
+    free.on("pageerror", lambda e: errors.append(str(e)))
+    free.goto(URL)
+    ready(free)
+    check(not free.is_visible("#mode-button"), "free drawing: no practice menu")
+    check(not free.is_visible("[data-panel-toggle=coach]") and not free.is_visible("[data-panel-toggle=reference]"),
+          "free drawing: no score or reference buttons")
+    check(not free.is_visible("#panel-reference") and not free.is_visible("#panel-coach"), "free drawing: their panels stay shut")
+    check(free.evaluate("() => window.drawingRoom.state.reference") is None, "free drawing: a saved reference is not shown")
+    check(free.evaluate("() => window.drawingRoom.state.underlay") is None, "free drawing: nothing under the paper")
+    check(free.is_visible("#toolbox") and free.is_visible("[data-panel-toggle=chat]"), "free drawing: tools and Claude stay")
     check(not errors, f"no console errors: {errors}")
     browser.close()
 

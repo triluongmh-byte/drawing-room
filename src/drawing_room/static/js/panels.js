@@ -20,7 +20,7 @@ export function initPanels() {
     for (const button of buttons) {
       const name = button.dataset.panelToggle;
       const panel = document.getElementById(`panel-${name}`);
-      panel.hidden = !open[name];
+      panel.hidden = !open[name] || button.dataset.off !== undefined;
       button.classList.toggle("active", !!open[name]);
       button.setAttribute("aria-expanded", String(!!open[name]));
     }

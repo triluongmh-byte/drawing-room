@@ -64,7 +64,7 @@ with sync_playwright() as p:
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(URL)
+    page.goto(URL + "?practice")
     page.evaluate("localStorage.clear()")
     page.reload()
     page.wait_for_timeout(800)

@@ -164,8 +164,8 @@
 
       <!-- Layers: a strip along the bottom, bottom of the stack on the left, like pages in a sketchbook app. -->
       <div class="bottom-zone pointer-events-none absolute right-3 bottom-3 left-[4.5rem] z-10 flex justify-center">
-        <aside class="surface pointer-events-auto flex max-w-full items-stretch gap-2 p-2" id="panel-layers" aria-label="Layers" hidden>
-          <ul class="layers flex min-w-0 items-stretch gap-1 overflow-x-auto" id="layers"></ul>
+        <aside class="surface pointer-events-auto flex w-[min(46rem,100%)] items-stretch gap-2 p-2" id="panel-layers" aria-label="Layers" hidden>
+          <ul class="layers flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto overscroll-x-contain" id="layers"></ul>
           <button id="layer-add" class="btn btn-ghost h-auto w-11 shrink-0 flex-col gap-1 rounded-lg border border-dashed text-[10px] text-muted-foreground" title="New layer above this one (⇧N)" aria-label="New layer">
             <i data-icon="plus" data-size="18"></i>Add
           </button>

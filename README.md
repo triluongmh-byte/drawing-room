@@ -82,8 +82,12 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   The swatch makes it a coloured pencil. Shading is tone, not line, so it never counts towards the score.
 
   ![Pencil: light and firm lines, tilted shading, the Shade tool and a coloured pencil](docs/screenshots/11-pencil.png)
+- **Free drawing for now**: the practice side (levels, references, scoring and the review) is put away while it is
+  being rethought. The app opens on blank paper with the tools, layers and Claude. Open it with `?practice`
+  (`http://127.0.0.1:8430/?practice`) to bring the practice menu, Reference and Score back; a reference saved with a
+  project stays in its file either way.
 - **Screen**: the paper fills everything under one slim dark bar: the project, the practice menu (level and what you
-  draw from), and the Reference, Layers, Score and Claude buttons. The UI uses Tailwind with shadcn/ui's design tokens
+  draw from, with `?practice`), and the Reference, Layers, Score and Claude buttons. The UI uses Tailwind with shadcn/ui's design tokens
   and Lucide icons. Reference, Score, Claude and the Layers strip are see-through panels over the paper; tap their
   button to show or hide them. The Score button shows the last score.
 - **Claude, like a CAD helper** (💬, docked on the right): say an idea, such as "draw a box in two-point perspective",
@@ -93,7 +97,8 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   message. The Claude layer is not scored (★ off). Ask questions in the same chat for advice. The chat is kept with the
   project. It is off in the warm-up drills, and at level 4 until you submit; the review then appears in the chat.
 - **Layers**: a strip along the bottom, one card with a thumbnail per layer, the bottom of the stack on the left (‹ ›
-  move the active layer down or up). A new drawing starts with Sketch, Line and Color; add up to 24 (＋ or ⇧N), and a
+  move the active layer down or up). The strip keeps one width; more layers scroll sideways (a sideways wheel, a
+  normal wheel over the strip, or a swipe). A new drawing starts with Sketch, Line and Color; add up to 24 (＋ or ⇧N), and a
   new layer opens with its name field ready to type. Tap a layer to draw on it, tap the active layer's name to rename it.
   Each layer can be hidden (eye), locked (lock, takes no strokes and no erasing), set to its own opacity, moved up or down,
   cleared on its own, or deleted. Adding, deleting, moving and renaming are undoable like strokes. ★ marks the layers

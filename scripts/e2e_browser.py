@@ -71,7 +71,7 @@ with sync_playwright() as p:
     logs = []
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text}"))
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
-    page.goto(URL)
+    page.goto(URL + "?practice")
     page.wait_for_function("() => window.drawingRoom && window.drawingRoom.state.references.length > 0")
     page.evaluate("() => localStorage.clear()")
     page.reload()
