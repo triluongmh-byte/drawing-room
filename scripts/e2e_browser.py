@@ -1,8 +1,9 @@
 """End-to-end check in a real browser: draws with synthetic pen events, scores, asks the coach, saves screenshots.
 
-Needs a running server and Google Chrome. Run it against a throwaway data dir:
-    uv run drawing-room serve --port 8431 --data "$(mktemp -d)" &
-    uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots http://127.0.0.1:8431/
+Needs Google Chrome and a running server with an EMPTY, throwaway data directory (never your real projects, never
+the server you draw on). Screenshots go to the folder given; the README's pictures live in docs/screenshots. Run:
+    uv run drawing-room serve --port 8499 --data "$(mktemp -d)" &
+    uv run --with playwright --with pillow python scripts/e2e_browser.py "$(mktemp -d)" http://127.0.0.1:8499/
 """
 import json, math, sys, time
 from playwright.sync_api import sync_playwright

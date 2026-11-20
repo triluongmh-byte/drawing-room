@@ -193,14 +193,16 @@ npm run build      # after changing the UI: Lucide icons -> static/js/icons.js, 
 ```
 
 The browser checks drive Google Chrome with Playwright, and they create projects. Run each one against a throwaway
-server and data directory, never your real one:
+server and data directory, never your real one. They save screenshots to the folder you give, so use a temporary one
+and copy over only the pictures the README uses:
 
 ```bash
 uv run drawing-room serve --port 8499 --data "$(mktemp -d)" &
-uv run --with playwright python scripts/e2e_projects.py      http://127.0.0.1:8499/ docs/screenshots
-uv run --with playwright python scripts/e2e_pencil.py        http://127.0.0.1:8499/ docs/screenshots
-uv run --with playwright python scripts/e2e_layers_ruler.py  http://127.0.0.1:8499/ docs/screenshots
-uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots http://127.0.0.1:8499/   # calls Claude
+SHOTS="$(mktemp -d)"
+uv run --with playwright python scripts/e2e_projects.py      http://127.0.0.1:8499/ "$SHOTS"
+uv run --with playwright python scripts/e2e_pencil.py        http://127.0.0.1:8499/ "$SHOTS"
+uv run --with playwright python scripts/e2e_layers_ruler.py  http://127.0.0.1:8499/ "$SHOTS"
+uv run --with playwright --with pillow python scripts/e2e_browser.py "$SHOTS" http://127.0.0.1:8499/   # calls Claude
 ```
 
 Layout:

@@ -1,8 +1,9 @@
 """Browser check for layers and the ruler, with synthetic pen events.
 
-Needs a running server. Run:
-    uv run drawing-room serve &
-    uv run --with playwright python scripts/e2e_layers_ruler.py http://127.0.0.1:8430/ docs/screenshots
+Needs Google Chrome and a running server with an EMPTY, throwaway data directory (never your real projects, never
+the server you draw on). Screenshots go to the folder given; the README's pictures live in docs/screenshots. Run:
+    uv run drawing-room serve --port 8499 --data "$(mktemp -d)" &
+    uv run --with playwright python scripts/e2e_layers_ruler.py http://127.0.0.1:8499/ "$(mktemp -d)"
 """
 import math, sys
 from playwright.sync_api import sync_playwright
