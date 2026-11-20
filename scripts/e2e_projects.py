@@ -1,8 +1,9 @@
 """Browser check for projects (new, open, rename, delete, shared between devices) and the full-width paper.
 
-Needs a running server with an EMPTY data directory (never your real one). Run:
-    uv run drawing-room serve --port 8431 --data "$(mktemp -d)" &
-    uv run --with playwright python scripts/e2e_projects.py http://127.0.0.1:8431/ docs/screenshots
+Needs Google Chrome and a running server with an EMPTY, throwaway data directory (never your real projects, never
+the server you draw on). Screenshots go to the folder given; the README's pictures live in docs/screenshots. Run:
+    uv run drawing-room serve --port 8499 --data "$(mktemp -d)" &
+    uv run --with playwright python scripts/e2e_projects.py http://127.0.0.1:8499/ "$(mktemp -d)"
 """
 import sys
 from playwright.sync_api import sync_playwright
