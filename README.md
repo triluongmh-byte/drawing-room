@@ -64,9 +64,11 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   work. New (named straight away), open any project from the list, rename it, or delete it. Changes save themselves
   about a second after you stop, and a copy kept in the browser covers a reload or a closed tab before that. A drawing
   from before projects becomes "My first drawing".
-- **Paper**: a white sheet on a dark desk with a fine grid. Pick its shape in the project menu (🗂 → Paper): 4:3 (the
-  reference frame), A4 landscape or portrait, square, 16:9 or 9:16. The reference and scoring frame always sits in the
-  middle of the sheet (shown as a faint outline on the bigger sheets), and strokes are clipped to the sheet. At levels
+- **Paper**: white paper edge to edge, with no border: draw anywhere. A squared grid (a line every 50 units, darker
+  every 250) moves, zooms and turns with the drawing; turn it on or off with the grid button in the top bar or **G**.
+  The sheet shape in the project menu (🗂 → Paper: 4:3, which is the reference frame, A4 landscape or portrait, square,
+  16:9 or 9:16) sets what the view fits to. Claude sees that sheet plus anything you drew past it. The reference and
+  scoring frame always sits in the middle of the sheet (a faint outline on the bigger sheets, while practising). At levels
   3–4 size and position are ignored, so you can draw anywhere on it.
 - **Toolbox** (left edge): **Write** holds the pencil (P), ink (I) and marker (M); **Paint** holds the colour brush (B),
   Shade (S) and the highlighter (H); **Shapes** (U) drags out a line, rectangle, ellipse, triangle, diamond or arrow
@@ -87,7 +89,7 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   being rethought. The app opens on blank paper with the tools, layers and Claude. Open it with `?practice`
   (`http://127.0.0.1:8430/?practice`) to bring the practice menu, Reference and Score back, along with the faint
   outline of the scoring frame on larger paper sizes; a reference saved with a project stays in its file either way.
-- **Screen**: the paper fills everything under one slim dark bar: the project, the practice menu (level and what you
+- **Screen**: the paper fills everything under one slim bar: the project, the practice menu (level and what you
   draw from, with `?practice`), and the Reference, Layers, Score and Claude buttons. The UI uses Tailwind with shadcn/ui's design tokens
   and Lucide icons. Reference, Score, Claude and the Layers strip are see-through panels over the paper; tap their
   button to show or hide them. The Score button shows the last score.

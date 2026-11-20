@@ -75,13 +75,35 @@ with sync_playwright() as p:
     PIXEL = """([x, y]) => { const c = document.getElementById('paper'); const r = c.getBoundingClientRect();
       const [sx, sy] = window.drawingRoom.paperToScreen(x, y); const k = c.width / r.width;
       return [...c.getContext('2d').getImageData(Math.round(sx * k), Math.round(sy * k), 1, 1).data]; }"""
+    # White paper edge to edge with no border; the grid (on by default, G toggles it) pans with the drawing.
+    check(mac.evaluate("() => window.drawingRoom.state.grid") is True, "the grid is on by default")
+    check(mac.get_attribute("#grid-toggle", "aria-pressed") == "true", "the grid button shows it is on")
+    mac.wait_for_timeout(100)
+    # Darkest pixel across the line at x 250 (a 1 px line falls between device pixels).
+    STRIP = """([x, y]) => { const c = document.getElementById('paper'); const r = c.getBoundingClientRect();
+      const [sx, sy] = window.drawingRoom.paperToScreen(x, y); const k = c.width / r.width;
+      const d = c.getContext('2d').getImageData(Math.round(sx * k) - 3, Math.round(sy * k), 7, 1).data;
+      let m = 255; for (let i = 0; i < d.length; i += 4) m = Math.min(m, d[i]); return m; }"""
+    on_line = mac.evaluate(STRIP, [250, 120])
+    check(200 < on_line < 255, f"a faint grid line at x 250: {on_line}")
+    mac.click("#grid-toggle")
+    mac.wait_for_timeout(100)
     corner = mac.evaluate("""() => [...document.getElementById('paper').getContext('2d').getImageData(3, 3, 1, 1).data]""")
-    check(max(corner[:3]) < 80, f"outside the sheet is the dark desk: {corner}")
-    check(mac.evaluate(PIXEL, [500, 20])[:3] == [255, 255, 255], "the sheet is white")
+    check(corner[:3] == [255, 255, 255], f"with the grid off, even the screen corner is white paper: {corner}")
+    check(mac.evaluate(STRIP, [250, 120]) == 255, "the grid line is gone")
+    mac.keyboard.press("g")
+    check(mac.evaluate("() => window.drawingRoom.state.grid") is True, "G brings the grid back")
+    # The paper has no edge: a stroke running past the sheet still shows.
+    mac.evaluate(DRAW, {"points": [[x, 700] for x in range(900, 1100, 5)]})
+    mac.wait_for_timeout(100)
+    check(mac.evaluate(PIXEL, [1060, 700])[:3] != [255, 255, 255], "a stroke past the sheet's edge is drawn")
+    mac.keyboard.press("Meta+z" if sys.platform == "darwin" else "Control+z")
+    mac.wait_for_timeout(100)
     mac.click("#project-button")
     mac.select_option("#paper-size", "a4-portrait")
     mac.keyboard.press("Escape")
-    check(mac.evaluate(PIXEL, [500, 1000])[:3] == [255, 255, 255], "an A4 portrait sheet reaches below the frame")
+    bottom = mac.evaluate("() => window.drawingRoom.paperToScreen(500, 1150)[1] < document.getElementById('paper').getBoundingClientRect().height")
+    check(bottom, "the view fits the A4 portrait sheet, below the frame")
     mac.evaluate("() => window.drawingRoom.flush()")
     mac.reload(); ready(mac)
     check(mac.evaluate("() => window.drawingRoom.state.paper") == "a4-portrait", "the paper size is kept with the project")

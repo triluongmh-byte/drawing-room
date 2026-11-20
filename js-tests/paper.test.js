@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FRAME_H, FRAME_W, PAPERS, paperId, sheetRect } from "../src/drawing_room/static/js/paper.js";
+import { FRAME_H, FRAME_W, PAPERS, paperId, sheetRect, COORD_LIMIT, drawingBounds, gridLines } from "../src/drawing_room/static/js/paper.js";
 
 test("the default sheet is exactly the reference frame", () => {
   assert.deepEqual(sheetRect("frame"), [0, 0, FRAME_W, FRAME_H]);
@@ -16,4 +16,22 @@ test("every sheet holds the whole frame, centred, at its own aspect", () => {
     assert.ok(Math.abs((x1 - x0) / (y1 - y0) - aspect) < 0.01, id);
     assert.ok(x1 - x0 === FRAME_W || y1 - y0 === FRAME_H, `${id} is as small as it can be`);
   }
+});
+
+test("the drawn area is the sheet grown to hold strokes past its edge, within the coordinate limit", () => {
+  const sheet = [0, 0, 1000, 750];
+  assert.deepEqual(drawingBounds(sheet, []), sheet);
+  assert.deepEqual(drawingBounds(sheet, [null, { x0: 100, y0: 100, x1: 200, y1: 200 }]), sheet);
+  assert.deepEqual(drawingBounds(sheet, [{ x0: -300, y0: 50, x1: 1200, y1: 900 }]), [-300, 0, 1200, 900]);
+  assert.deepEqual(drawingBounds(sheet, [{ x0: -9e9, y0: 0, x1: 10, y1: NaN }, { x0: -9e9, y0: 0, x1: 10, y1: 9e9 }]), [-COORD_LIMIT, 0, 1000, COORD_LIMIT]);
+});
+
+test("grid lines every 50 units, every fifth major, coarser when zoomed far out", () => {
+  const lines = gridLines([-10, 0, 260, 100], 1);
+  assert.equal(lines.step, 50);
+  assert.deepEqual(lines.major.x, [0, 250]);
+  assert.deepEqual(lines.minor.x, [50, 100, 150, 200]);
+  assert.deepEqual(lines.major.y, [0]);
+  assert.deepEqual(lines.minor.y, [50, 100]);
+  assert.equal(gridLines([0, 0, 5000, 5000], 0.1).step, 250); // 50 units would be 5 px apart
 });
