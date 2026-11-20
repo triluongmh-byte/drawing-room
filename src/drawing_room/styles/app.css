@@ -215,6 +215,13 @@
     @apply btn-base absolute top-0.5 right-0.5 size-5 rounded-full bg-black/70 p-0 text-white hover:bg-black;
   }
 
+  /* Notes pinned on the paper, waiting in the composer. */
+  .note-no { @apply inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[#f0781e] text-[11px] font-bold text-white; }
+  .chat-note { @apply flex items-start gap-2 rounded-md bg-secondary px-2 py-1.5 text-xs; }
+  .chat-note .tx { @apply min-w-0 flex-1 [overflow-wrap:anywhere] pt-0.5; }
+  .chat-note button { @apply btn-base size-5 rounded-sm p-0 text-muted-foreground hover:bg-accent hover:text-foreground; }
+  #paper-wrap.noting #paper { cursor: crosshair; }
+
   .chat-empty { @apply m-auto px-2 text-center text-sm leading-relaxed text-muted-foreground; }
 
   /* ---- Toast-style hint on the paper */

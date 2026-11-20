@@ -103,7 +103,10 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   Claude can draw on several layers of its own and set each line's width, opacity and dash, and fill faces. For a
   perspective illustration it draws one box: the faint dashed construction and the finding lines on "Sketch", the
   faces at 60% on "Color", and the bold visible edges on "Line" (prefixed "Claude" when you already have a layer of
-  that name). Hide its Sketch layer to see a clean box. The chat is kept with the
+  that name). Hide its Sketch layer to see a clean box.
+  **Notes (N)**: with the pin tool in the toolbox, tap a spot and write a question ("is this corner square?"). A numbered
+  orange pin marks it, the note waits above the message box (× removes it), and it goes with your next message: Claude
+  gets each note with its place and sees the numbered pins on the drawing, and answers them by number. The chat is kept with the
   project. It is off in the warm-up drills, and at level 4 until you submit; the review then appears in the chat.
 - **Layers**: a strip along the bottom, one card with a thumbnail per layer, the bottom of the stack on the left (‹ ›
   move the active layer down or up). The strip keeps one width; more layers scroll sideways (a sideways wheel, a

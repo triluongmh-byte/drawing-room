@@ -17,6 +17,7 @@ import { SHAPES, bigEnough, shapePoints } from "./shapes.js";
 import { createRuler, dragEnd, followsRuler, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeBounds, strokeHits } from "./strokes.js";
 import { GROUPS, clampSize, groupOf, restoreToolSettings, shareColor, stepSize } from "./tools.js";
+import { MAX_NOTES, addNote, noteAt, notesSummary } from "./notes.js";
 import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoomAt } from "./view.js";
 
 const PAPER_W = 1000;
@@ -75,6 +76,9 @@ const state = {
   groupTool: { write: "pencil", paint: "brush", shapes: "shape" }, // the tool each toolbox group picks when tapped
   shapeKind: "rect", // the shape the Shapes tool drags out (shapes.js)
   shapeDash: false, // whether shapes come out dashed
+  noting: false, // the Note tool is on: a tap on the paper pins a note instead of drawing
+  notes: [], // notes pinned for the next chat message: { x, y, text } in paper units
+  noteDraft: null, // [x, y] of the note being written
   grid: true, // the squared grid over the paper, to line strokes up against (per device)
   flyout: null, // "write" | "paint" | "eraser" while the tool flyout is open
   attachments: [], // pictures waiting to go with the next chat message: { name, full, thumb } data URLs
@@ -498,6 +502,92 @@ function drawRuler() {
   ctx.restore();
 }
 
+// ------------------------------------------------------------------ notes pinned to ask Claude about a spot
+
+const NOTE_COLOR = "#f0781e";
+
+/** Numbered orange pins for the notes waiting to be sent (and the one being written), a fixed size on screen. */
+function drawNotes(dpr) {
+  const pins = state.notes.map((note) => [note.x, note.y]);
+  if (state.noteDraft) pins.push(state.noteDraft);
+  if (!pins.length) return;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  pins.forEach(([px, py], i) => {
+    const [sx, sy] = paperToScreen(state.view, px, py);
+    ctx.globalAlpha = i === state.notes.length ? 0.6 : 1; // the draft is faint until it is added
+    ctx.beginPath();
+    ctx.arc(sx, sy, 11, 0, Math.PI * 2);
+    ctx.fillStyle = NOTE_COLOR;
+    ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
+    ctx.shadowBlur = 4;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(String(i + 1), sx, sy + 0.5);
+  });
+  ctx.restore();
+}
+
+function setNoting(on) {
+  state.noting = on;
+  $("note-toggle").classList.toggle("active", on);
+  $("note-toggle").setAttribute("aria-pressed", String(on));
+  $("paper-wrap").classList.toggle("noting", on);
+  if (!on) closeNoteEditor();
+  if (on) flash("Tap a spot to ask Claude about it.");
+}
+
+function openNoteEditor([sx, sy], point) {
+  if (state.notes.length >= MAX_NOTES) { flash(`Up to ${MAX_NOTES} notes per message: send these first.`); return; }
+  state.noteDraft = point;
+  state.dirty = true;
+  const box = $("note-editor"), wrap = $("paper-wrap");
+  $("note-editor-no").textContent = String(state.notes.length + 1);
+  $("note-text").value = "";
+  box.hidden = false;
+  box.style.left = `${Math.max(8, Math.min(sx + 18, wrap.clientWidth - box.offsetWidth - 8))}px`;
+  box.style.top = `${Math.max(8, Math.min(sy - 22, wrap.clientHeight - box.offsetHeight - 8))}px`;
+  $("note-text").focus();
+}
+
+function closeNoteEditor() {
+  $("note-editor").hidden = true;
+  if (state.noteDraft) { state.noteDraft = null; state.dirty = true; }
+}
+
+function commitNote() {
+  const next = addNote(state.notes, state.noteDraft, $("note-text").value);
+  if (next === state.notes) { $("note-text").focus(); return; }
+  state.notes = next;
+  closeNoteEditor();
+  renderNotes();
+  panels.open("chat");
+}
+
+function renderNotes() {
+  const list = $("chat-notes");
+  list.innerHTML = "";
+  list.hidden = !state.notes.length;
+  state.notes.forEach((note, index) => {
+    const row = Object.assign(document.createElement("li"), { className: "chat-note" });
+    const remove = Object.assign(document.createElement("button"), { type: "button", innerHTML: icon("x", 12), title: `Remove note ${index + 1}` });
+    remove.setAttribute("aria-label", `Remove note ${index + 1}`);
+    remove.addEventListener("click", () => { state.notes = state.notes.filter((_, i) => i !== index); renderNotes(); });
+    row.append(Object.assign(document.createElement("span"), { className: "note-no", textContent: String(index + 1) }),
+      Object.assign(document.createElement("span"), { className: "tx", textContent: note.text }), remove);
+    list.append(row);
+  });
+  $("question").placeholder = state.notes.length ? "Anything else? Enter sends the notes too." : "Ask Claude to draw something, or for advice…";
+  state.dirty = true;
+}
+
 /** The paper: a soft off-white, easier on the eyes than pure white (the top bar matches it). */
 const PAPER_COLOR = "#f5f5f2";
 
@@ -558,6 +648,7 @@ function render() {
   drawMarks();
   ctx.restore();
   drawRuler();
+  drawNotes(dpr);
 
   if (state.eraserAt) {
     ctx.strokeStyle = "rgba(60,60,60,0.7)";
@@ -734,6 +825,14 @@ function onPointerDown(event) {
   }
   if (mode === "draw" && (state.current || state.erasing || state.rulerDrag)) mode = "ignore"; // one drawing pointer at a time
   const [x, y] = local(event);
+  if (mode === "draw" && state.noting) {
+    // The Note tool: a tap pins a note (or shows the one already there) instead of drawing.
+    const point = screenToPaper(state.view, x, y);
+    const hit = noteAt(state.notes, point, 14 / state.view.scale);
+    if (hit >= 0) flash(`📍${hit + 1} ${state.notes[hit].text}`);
+    else openNoteEditor([x, y], point);
+    return;
+  }
   if (mode === "draw" && rulerEnabled()) {
     const point = screenToPaper(state.view, x, y);
     const handle = hitHandle(state.ruler, point, HANDLE_RADIUS / state.view.scale);
@@ -827,6 +926,7 @@ function redo() { if (state.history.redo()) { state.marks = []; afterChange(); }
 
 function setTool(tool) {
   if (!TOOLS[tool]) tool = "pencil";
+  if (state.noting) setNoting(false);
   state.tool = tool;
   const group = groupOf(tool);
   if (group) state.groupTool[group] = tool;
@@ -1634,18 +1734,23 @@ function claudeStrokes(drawn) {
 async function sendChat() {
   const text = $("question").value.trim();
   const pictures = state.attachments;
-  if ((!text && !pictures.length) || state.assisting || !LEVELS[state.level].coach) return;
+  const notes = state.notes;
+  if ((!text && !pictures.length && !notes.length) || state.assisting || !LEVELS[state.level].coach) return;
   // Claude gets the conversation as text; the pictures go with this message only.
   const history = state.chat.slice(-12).map(({ role, text: said }) => ({ role, text: said }));
   $("question").value = "";
   state.attachments = [];
   renderAttachments();
-  pushChat("user", text, pictures.map((picture) => picture.thumb));
+  state.notes = [];
+  renderNotes();
+  if (state.noting) setNoting(false);
+  pushChat("user", [text, notesSummary(notes)].filter(Boolean).join("\n"), pictures.map((picture) => picture.thumb));
   setAssisting(true);
   try {
     const answer = await postJSON("/api/assist", {
       level: state.level, reference: referencePayload(), sheet: drawnArea(), message: text, history,
       attachments: pictures.map((picture) => picture.full),
+      notes,
       // Claude's own strokes (on any of its layers) are marked, so it never takes them for the person's ink.
       strokes: (() => {
         const mine = new Set(claudeLayerIds());
@@ -1802,6 +1907,13 @@ function wire() {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
   });
   $("grid-toggle").addEventListener("click", () => setGrid(!state.grid));
+  $("note-toggle").addEventListener("click", () => setNoting(!state.noting));
+  $("note-add").addEventListener("click", commitNote);
+  $("note-cancel").addEventListener("click", closeNoteEditor);
+  $("note-text").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commitNote(); }
+    if (e.key === "Escape") { e.preventDefault(); closeNoteEditor(); }
+  });
   $("paper-size").addEventListener("change", (e) => { state.paper = paperId(e.target.value); fit(); save(); });
   $("pin-form").addEventListener("submit", sendPin);
 
@@ -1839,7 +1951,7 @@ function wire() {
 
   window.addEventListener("keydown", (e) => {
     if (e.target.matches("textarea, input, select")) return;
-    if (e.key === "Escape") { closePopovers(); return; }
+    if (e.key === "Escape") { closePopovers(); if (state.noting) setNoting(false); return; }
     const key = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && key === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); return; }
     if (e.metaKey || e.ctrlKey) return;
@@ -1850,6 +1962,7 @@ function wire() {
     else if (key === "l") toggleRuler();
     else if (key === "g") setGrid(!state.grid);
     else if (key === "n" && e.shiftKey) addLayer();
+    else if (key === "n") setNoting(!state.noting);
     else if (key === "r") rotateBy((e.shiftKey ? -1 : 1) * Math.PI / 12);
     else if (key === "0") fit();
   });

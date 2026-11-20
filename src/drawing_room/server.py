@@ -256,6 +256,12 @@ class App:
         except ValueError as bad:
             raise ApiError(400, f"could not read an attached picture: {bad}") from None
         kwargs = {"attachments": attachments} if attachments else {}
+        try:
+            notes = assist_module.parse_notes(request.get("notes"))
+        except ValueError as bad:
+            raise ApiError(400, f"bad note: {bad}") from None
+        if notes:
+            kwargs["notes"] = notes
         if self.coach_runner is not None:
             kwargs["runner"] = self.coach_runner
         if self.coach_api_client is not None:
