@@ -1,7 +1,7 @@
 # Tasks Board
 
 ## In Progress
-- **Toolbox + shadcn UI** (PR #6, open): practice put away for now (free drawing; `?practice` brings it back), blank paper by default (no surprise reference line), practice menu instead of the level dropdown, left toolbox with Write (pencil, ink, marker) and Paint (brush, shade, highlighter) flyouts with colours, layers as a fixed-width bottom strip with thumbnails that scrolls sideways, Tailwind + shadcn tokens + Lucide icons.
+- **Toolbox + shadcn UI** (PR #6, open): practice put away for now (free drawing; `?practice` brings it back), blank paper by default (no surprise reference line), practice menu instead of the level dropdown, left toolbox with Write (pencil, ink, marker), Paint (brush, shade, highlighter) and Shapes (line, rectangle, ellipse, triangle, diamond, arrow) flyouts with colours, a ruler that only grabs strokes running along it, layers as a fixed-width bottom strip with thumbnails that scrolls sideways, Tailwind + shadcn tokens + Lucide icons.
 
 ## Ready for Deploy
 - **Full-screen canvas UI** (PR #5, merged): full-screen paper, paper sizes, Claude as a drawing helper on its own layer, README showcase.

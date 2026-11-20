@@ -42,9 +42,12 @@ test("a picked colour is shared within the tool's group only, the eraser keeps n
   assert.equal(shareColor(settings, "#ffffff", "eraser").pencil.color, "#2f6fd0"); // no group: ignored
 });
 
-test("tools sit in two groups, each with six colours to pick from; the eraser in neither", () => {
+test("tools sit in three groups, each with six colours to pick from; the eraser in none", () => {
   assert.deepEqual(GROUPS.write.tools, ["pencil", "ink", "marker"]);
   assert.deepEqual(GROUPS.paint.tools, ["brush", "shade", "highlighter"]);
+  assert.deepEqual(GROUPS.shapes.tools, ["shape"]);
+  assert.equal(groupOf("shape"), "shapes");
+  assert.equal(TOOLS.shape.thinning, 0); // an even line, whatever the pressure
   for (const group of Object.values(GROUPS)) {
     assert.equal(group.palette.length, 6);
     for (const color of group.palette) assert.match(color, /^#[0-9a-f]{6}$/);

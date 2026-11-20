@@ -10,6 +10,8 @@ export const TOOLS = {
   brush: { label: "Color brush", color: "#e0604a", size: 22, min: 4, max: 80, opacity: 0.45, thinning: 0.25, smoothing: 0.6, streamline: 0.5 },
   // Wide, flat and see-through; multiplied onto the paper so lines under it stay dark. Never scored.
   highlighter: { label: "Highlighter", color: "#ffd43b", size: 20, min: 6, max: 60, opacity: 0.4, thinning: 0, smoothing: 0.7, streamline: 0.55, blend: "multiply" },
+  // Lines, boxes, ellipses and the rest, dragged out: an even, opaque line like a fine marker.
+  shape: { label: "Shape", color: "#141312", size: 3, min: 1, max: 16, opacity: 1, thinning: 0, smoothing: 0.2, streamline: 0 },
   eraser: { label: "Eraser", size: 12, min: 4, max: 60 },
 };
 
@@ -19,6 +21,9 @@ export const GROUPS = {
            palette: ["#141312", "#3b3936", "#2f6fd0", "#2e8b57", "#d9822b", "#d64545"] },
   paint: { label: "Paint", tools: ["brush", "shade", "highlighter"],
            palette: ["#e0604a", "#f2b636", "#ffd43b", "#4ba3c7", "#6bbf59", "#8e6cc9"] },
+  // One tool; its flyout picks the shape (shapes.js) instead of a tool.
+  shapes: { label: "Shapes", tools: ["shape"],
+            palette: ["#141312", "#3b3936", "#2f6fd0", "#2e8b57", "#d9822b", "#d64545"] },
 };
 
 /** Tools with a colour of their own (the eraser has none). */

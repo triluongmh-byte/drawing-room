@@ -13,7 +13,8 @@ import { DEFAULT_PAPER, PAPERS, paperId, sheetRect } from "./paper.js";
 import { settlePencil } from "./pencil.js";
 import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
 import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
-import { createRuler, dragEnd, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
+import { SHAPES, bigEnough, shapePoints } from "./shapes.js";
+import { createRuler, dragEnd, followsRuler, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeHits } from "./strokes.js";
 import { GROUPS, clampSize, groupOf, restoreToolSettings, shareColor, stepSize } from "./tools.js";
 import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoomAt } from "./view.js";
@@ -26,7 +27,8 @@ const DEVICE_KEY = "drawing-room:device"; // per device: the open project and ea
 // Changes not yet on the server: written on every change, cleared once saved, so closing or reloading the
 // page right after a stroke loses nothing. `base` is the server version the changes were made on.
 const DRAFT_KEY = "drawing-room:draft";
-const RULER_REACH = 28; // screen pixels: a stroke starting this close to the ruler follows it
+const RULER_REACH = 20; // screen pixels: a stroke starting this close to the ruler may follow it...
+const RULER_DECIDE = 14; // ...and once it has moved this far, it does if it runs along the ruler (ruler.js)
 const HANDLE_RADIUS = 16; // screen pixels
 // The practice side (levels, references, scoring) is put away for now: the app is free drawing on blank paper.
 // Open the page with `?practice` to bring it back (the end-to-end checks do).
@@ -40,6 +42,11 @@ const LEVEL_INFO = {
   2: { name: "Trace", icon: "scan-line", text: "The reference under your paper, no steps. Claude helps when asked." },
   3: { name: "From reference", icon: "image", text: "Look at it beside the paper, nothing underneath. Proportions count, not size." },
   4: { name: "Test", icon: "graduation-cap", text: "No help at all. Press Submit and Claude reviews the drawing." },
+};
+const GROUP_HINTS = {
+  write: "Pencil, ink and marker (P, I, M)",
+  paint: "Colour brush, shade and highlighter (B, S, H)",
+  shapes: "Line, rectangle, ellipse, triangle, diamond and arrow (U); hold Shift for even ones",
 };
 const TOOL_ICONS = { pencil: "pencil", ink: "pen-tool", marker: "pen", brush: "paintbrush", shade: "brush", highlighter: "highlighter", eraser: "eraser" };
 const LEVELS = {
@@ -65,7 +72,8 @@ const state = {
   underlay: null, // HTMLImageElement drawn on the paper
   tool: "pencil",
   tools: restoreToolSettings(), // tool -> { size, color }
-  groupTool: { write: "pencil", paint: "brush" }, // the tool each toolbox group picks when tapped
+  groupTool: { write: "pencil", paint: "brush", shapes: "shape" }, // the tool each toolbox group picks when tapped
+  shapeKind: "rect", // the shape the Shapes tool drags out (shapes.js)
   flyout: null, // "write" | "paint" | "eraser" while the tool flyout is open
   project: null, // { id, name, created, updated, strokes } of the open project
   projects: null, // the project list, as last fetched
@@ -129,7 +137,7 @@ const saver = createSaver(async () => {
 
 function saveDevice() {
   try {
-    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool, groupTool: state.groupTool }));
+    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool, groupTool: state.groupTool, shapeKind: state.shapeKind }));
   } catch { /* private mode or full storage: drawing still works */ }
 }
 
@@ -312,6 +320,7 @@ async function startProjects() {
   for (const [group, { tools }] of Object.entries(GROUPS)) {
     if (tools.includes(device.groupTool?.[group])) state.groupTool[group] = device.groupTool[group];
   }
+  if (SHAPES[device.shapeKind]) state.shapeKind = device.shapeKind;
   let openId = projects.some((p) => p.id === device.project) ? device.project : projects[0]?.id;
   if (legacy && (hasStrokes(legacy) || !projects.length)) {
     const { project } = await postJSON("/api/projects", { name: hasStrokes(legacy) ? "My first drawing" : "Drawing 1", drawing: legacy });
@@ -517,8 +526,8 @@ function render() {
   ctx.beginPath();
   ctx.rect(sx0, sy0, sx1 - sx0, sy1 - sy0);
   ctx.clip();
-  if (state.paper !== DEFAULT_PAPER) {
-    // The reference and scoring frame inside a bigger sheet.
+  if (PRACTICE && state.paper !== DEFAULT_PAPER) {
+    // The reference and scoring frame inside a bigger sheet (only while practising: free drawing has none).
     ctx.strokeStyle = "rgba(60, 50, 40, 0.14)";
     ctx.lineWidth = 1 / scale;
     ctx.strokeRect(0, 0, PAPER_W, PAPER_H);
@@ -572,24 +581,63 @@ function startStroke(event) {
     return;
   }
   const settings = state.tools[state.tool];
+  if (state.tool === "shape") {
+    // Dragged out from here: the shape is rebuilt from this corner to the pointer on every move.
+    state.current = createStroke({ layer: layer.id, tool: "shape", size: settings.size, opacity: TOOLS.shape.opacity, color: settings.color });
+    state.current.shape = state.shapeKind;
+    state.current.shapeDrag = { a: [px, py], b: [px, py] };
+    state.dirty = true;
+    return;
+  }
   state.current = createStroke({
     layer: layer.id, tool: state.tool, size: settings.size, opacity: TOOLS[state.tool].opacity,
     color: settings.color, simulatePressure: event.pointerType !== "pen",
   });
-  // A stroke that starts against the ruler is pulled onto its edge for its whole length.
-  if (rulerEnabled() && snapsToRuler(state.ruler, [px, py], RULER_REACH / state.view.scale)) state.current.ruled = true;
+  // A stroke that starts against the ruler is pulled onto its edge for its whole length, but only if it then
+  // runs along the ruler: one heading off across it stays freehand. Until that is clear, it follows the ruler.
+  if (rulerEnabled() && snapsToRuler(state.ruler, [px, py], RULER_REACH / state.view.scale)) {
+    state.current.ruled = "maybe";
+    state.current.raw = [];
+  }
   addEventPoint(event);
 }
 
+/** A stroke that started by the ruler: once it has moved far enough, decide whether it follows it. */
+function decideRuler(stroke) {
+  const first = stroke.raw[0], last = stroke.raw.at(-1);
+  if (Math.hypot(last[0] - first[0], last[1] - first[1]) * state.view.scale < RULER_DECIDE) return;
+  stroke.ruled = followsRuler(state.ruler, first, last);
+  stroke.points = [];
+  for (const [x, y, p, t, tx, ty] of stroke.raw) {
+    const [qx, qy] = stroke.ruled ? projectOnto(state.ruler, [x, y]) : [x, y];
+    addPoint(stroke, qx, qy, p, t, tx, ty);
+  }
+}
+
+function dragShape(event) {
+  const stroke = state.current;
+  const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+  const [sx, sy] = local(events.at(-1) ?? event);
+  stroke.shapeDrag.b = screenToPaper(state.view, sx, sy);
+  stroke.points = [];
+  for (const [x, y] of shapePoints(stroke.shape, stroke.shapeDrag.a, stroke.shapeDrag.b, { constrain: event.shiftKey })) {
+    addPoint(stroke, x, y, 0.5, 0, 0, 0);
+  }
+  state.dirty = true;
+}
+
 function addEventPoint(event) {
+  if (state.current.shapeDrag) return dragShape(event);
   const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
   for (const e of events.length ? events : [event]) {
     const [sx, sy] = local(e);
     let [px, py] = screenToPaper(state.view, sx, sy);
-    if (state.current.ruled) [px, py] = projectOnto(state.ruler, [px, py]);
     const pressure = e.pointerType === "pen" ? e.pressure : 0.5;
+    state.current.raw?.push([px, py, pressure, e.timeStamp, e.tiltX || 0, e.tiltY || 0]);
+    if (state.current.ruled) [px, py] = projectOnto(state.ruler, [px, py]);
     addPoint(state.current, px, py, pressure, e.timeStamp, e.tiltX || 0, e.tiltY || 0);
   }
+  if (state.current.ruled === "maybe") decideRuler(state.current);
   // Pressure sets how dark the pencil is, and laying it flat turns the stroke into shading, while drawing.
   settlePencil(state.current);
   state.dirty = true;
@@ -611,6 +659,13 @@ function eraseAt(px, py) {
 
 function finishStroke(cancel = false) {
   if (state.current) {
+    const stroke = state.current;
+    // A tap with the Shapes tool is not a shape.
+    if (stroke.shapeDrag && !bigEnough(stroke.shapeDrag.a, stroke.shapeDrag.b)) cancel = true;
+    // Working fields stay out of the saved drawing.
+    if (stroke.ruled === "maybe") stroke.ruled = true; // too short to tell: it stays on the ruler
+    delete stroke.raw;
+    delete stroke.shapeDrag;
     if (!cancel && state.current.points.length) {
       state.history.add(settlePencil(state.current));
       afterChange();
@@ -771,9 +826,9 @@ function renderToolSettings() {
     const name = button.dataset.group, shown = state.groupTool[name];
     button.classList.toggle("active", name === group);
     button.setAttribute("aria-expanded", String(state.flyout === name));
-    button.querySelector("i[data-icon]").innerHTML = icon(TOOL_ICONS[shown], 20);
+    button.querySelector("i[data-icon]").innerHTML = icon(toolIcon(shown), 20);
     button.querySelector(".dot").style.background = state.tools[shown].color;
-    button.title = `${GROUPS[name].label}: ${TOOLS[shown].label} now. ${name === "write" ? "Pencil, ink and marker (P, I, M)" : "Colour brush, shade and highlighter (B, S, H)"}`;
+    button.title = `${GROUPS[name].label}: ${toolLabel(shown)} now. ${GROUP_HINTS[name]}`;
   }
   document.querySelectorAll("[data-tool]").forEach((b) => {
     b.classList.toggle("active", b.dataset.tool === state.tool);
@@ -787,6 +842,14 @@ function renderToolSettings() {
   renderFlyout();
 }
 
+function toolIcon(tool) {
+  return tool === "shape" ? SHAPES[state.shapeKind].icon : TOOL_ICONS[tool];
+}
+
+function toolLabel(tool) {
+  return tool === "shape" ? SHAPES[state.shapeKind].label : TOOLS[tool].label;
+}
+
 /** The flyout beside the toolbox: the group's tools, its colours (none for the eraser) and the size. */
 function renderFlyout() {
   const flyout = $("tool-flyout");
@@ -795,16 +858,29 @@ function renderFlyout() {
   const group = GROUPS[state.flyout] ?? null;
   flyout.dataset.group = state.flyout;
   $("flyout-title").textContent = group ? group.label : "Eraser";
-  $("flyout-tool-name").textContent = group ? TOOLS[state.tool]?.label ?? "" : "whole strokes";
+  $("flyout-tool-name").textContent = group ? (groupOf(state.tool) === state.flyout ? toolLabel(state.tool) : "") : "whole strokes";
   const tools = $("flyout-tools");
   tools.hidden = !group;
   tools.innerHTML = "";
-  for (const tool of group?.tools ?? []) {
+  // The Shapes flyout lists shapes, two rows of three; the others list their tools.
+  tools.classList.toggle("flex-wrap", state.flyout === "shapes");
+  if (state.flyout === "shapes") {
+    for (const [kind, shape] of Object.entries(SHAPES)) {
+      const on = state.tool === "shape" && kind === state.shapeKind;
+      const button = document.createElement("button");
+      button.className = `flyout-tool${on ? " active" : ""}`;
+      button.dataset.shape = kind;
+      button.setAttribute("aria-pressed", String(on));
+      button.innerHTML = `${icon(shape.icon, 22)}<span>${shape.label}</span>`;
+      tools.append(button);
+    }
+  }
+  for (const tool of state.flyout === "shapes" ? [] : group?.tools ?? []) {
     const button = document.createElement("button");
     button.className = `flyout-tool${tool === state.tool ? " active" : ""}`;
     button.dataset.tool = tool;
     button.setAttribute("aria-pressed", String(tool === state.tool));
-    button.innerHTML = `${icon(TOOL_ICONS[tool], 22)}<span>${TOOLS[tool].label}</span>`;
+    button.innerHTML = `${icon(toolIcon(tool), 22)}<span>${toolLabel(tool)}</span>`;
     tools.append(button);
   }
   $("flyout-colors").hidden = !group;
@@ -1491,6 +1567,8 @@ function wire() {
   for (const button of $("toolbox").querySelectorAll("[data-group]")) button.addEventListener("click", () => tapGroup(button.dataset.group));
   $("toolbox").querySelector("[data-tool=eraser]").addEventListener("click", tapEraser);
   $("tool-flyout").addEventListener("click", (event) => {
+    const shape = event.target.closest("[data-shape]");
+    if (shape) { state.shapeKind = shape.dataset.shape; setTool("shape"); save(); return; }
     const tool = event.target.closest("[data-tool]");
     if (tool) { setTool(tool.dataset.tool); save(); return; }
     const swatch = event.target.closest("[data-color]");
@@ -1592,7 +1670,7 @@ function wire() {
     if ((e.metaKey || e.ctrlKey) && key === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); return; }
     if (e.metaKey || e.ctrlKey) return;
     if (e.code === "Space") { state.input.spaceDown = true; e.preventDefault(); return; }
-    const tools = { p: "pencil", i: "ink", m: "marker", b: "brush", s: "shade", h: "highlighter", e: "eraser" };
+    const tools = { p: "pencil", i: "ink", m: "marker", b: "brush", s: "shade", h: "highlighter", u: "shape", e: "eraser" };
     if (tools[key]) { setTool(tools[key]); save(); }
     else if (key === "[" || key === "]") setSize(stepSize(state.tool, state.tools[state.tool].size, key === "]" ? 1 : -1));
     else if (key === "l") toggleRuler();

@@ -73,6 +73,9 @@
         <button class="tool-btn" data-group="paint" title="Paint: colour brush, shade and highlighter (B, S, H)" aria-label="Paint tools" aria-haspopup="true" aria-expanded="false">
           <i data-icon="paintbrush" data-size="20"></i><span class="dot" aria-hidden="true"></span>
         </button>
+        <button class="tool-btn" data-group="shapes" title="Shapes: line, rectangle, ellipse, triangle, diamond and arrow (U)" aria-label="Shapes" aria-haspopup="true" aria-expanded="false">
+          <i data-icon="square" data-size="20"></i><span class="dot" aria-hidden="true"></span>
+        </button>
         <button class="tool-btn" data-tool="eraser" title="Eraser (E): removes whole strokes on the active layer. Tap again for its size." aria-label="Eraser">
           <i data-icon="eraser" data-size="20"></i>
         </button>
@@ -165,11 +168,11 @@
       <!-- Layers: a strip along the bottom, bottom of the stack on the left, like pages in a sketchbook app. -->
       <div class="bottom-zone pointer-events-none absolute right-3 bottom-3 left-[4.5rem] z-10 flex justify-center">
         <aside class="surface pointer-events-auto flex w-[min(46rem,100%)] items-stretch gap-2 p-2" id="panel-layers" aria-label="Layers" hidden>
-          <ul class="layers flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto overscroll-x-contain" id="layers"></ul>
+          <ul class="layers flex min-w-0 items-stretch gap-1 overflow-x-auto overscroll-x-contain" id="layers"></ul>
           <button id="layer-add" class="btn btn-ghost h-auto w-11 shrink-0 flex-col gap-1 rounded-lg border border-dashed text-[10px] text-muted-foreground" title="New layer above this one (⇧N)" aria-label="New layer">
             <i data-icon="plus" data-size="18"></i>Add
           </button>
-          <span class="w-px shrink-0 self-stretch bg-border" aria-hidden="true"></span>
+          <span class="ml-auto w-px shrink-0 self-stretch bg-border" aria-hidden="true"></span>
           <div class="flex w-36 shrink-0 flex-col justify-center gap-3 lg:w-40">
             <div class="flex items-center justify-between">
               <span class="label-muted" title="Tap a layer to draw on it, tap its name to rename it. The lock stops drawing on it, the star counts it in the score.">Layer</span>

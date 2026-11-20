@@ -69,7 +69,8 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   middle of the sheet (shown as a faint outline on the bigger sheets), and strokes are clipped to the sheet. At levels
   3–4 size and position are ignored, so you can draw anywhere on it.
 - **Toolbox** (left edge): **Write** holds the pencil (P), ink (I) and marker (M); **Paint** holds the colour brush (B),
-  Shade (S) and the highlighter (H); then the eraser (E, removes whole strokes), the ruler (L), undo/redo, rotate, fit
+  Shade (S) and the highlighter (H); **Shapes** (U) drags out a line, rectangle, ellipse, triangle, diamond or arrow
+  (hold Shift for a square, a circle, or a line at 15° steps); then the eraser (E, removes whole strokes), the ruler (L), undo/redo, rotate, fit
   and clear. Tap a group to pick its tool; tap it again for its flyout: the group's tools, six colours plus any colour,
   and the size (`[` / `]` change it too). Each tool keeps its own size, and a colour is shared within its group, so the
   pencil and the ink match while the highlighter stays yellow. The marker is an even, opaque felt-tip; the highlighter
@@ -84,8 +85,8 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   ![Pencil: light and firm lines, tilted shading, the Shade tool and a coloured pencil](docs/screenshots/11-pencil.png)
 - **Free drawing for now**: the practice side (levels, references, scoring and the review) is put away while it is
   being rethought. The app opens on blank paper with the tools, layers and Claude. Open it with `?practice`
-  (`http://127.0.0.1:8430/?practice`) to bring the practice menu, Reference and Score back; a reference saved with a
-  project stays in its file either way.
+  (`http://127.0.0.1:8430/?practice`) to bring the practice menu, Reference and Score back, along with the faint
+  outline of the scoring frame on larger paper sizes; a reference saved with a project stays in its file either way.
 - **Screen**: the paper fills everything under one slim dark bar: the project, the practice menu (level and what you
   draw from, with `?practice`), and the Reference, Layers, Score and Claude buttons. The UI uses Tailwind with shadcn/ui's design tokens
   and Lucide icons. Reference, Score, Claude and the Layers strip are see-through panels over the paper; tap their
@@ -104,8 +105,8 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   cleared on its own, or deleted. Adding, deleting, moving and renaming are undoable like strokes. ★ marks the layers
   that count towards the score (Color is off by default). The reference image sits under the stack with its own
   opacity slider. Old v0 drawings are upgraded on load.
-- **Ruler** (📏 or L, levels 1–4): a straightedge on the paper. Start a stroke against it and the whole stroke lands on
-  its edge. Drag an end to turn it (snaps to 15° steps; hold ⌥ for any angle), drag the ⊕ in the middle to move it, or
+- **Ruler** (L): a straightedge on the paper. Start a stroke against it and run along it, and the whole stroke lands on
+  its edge; a stroke that starts by it but heads off across it (more than 25°) stays freehand. Drag an end to turn it (snaps to 15° steps; hold ⌥ for any angle), drag the ⊕ in the middle to move it, or
   type an exact angle next to the button. The angle is shown on the ruler. It is not offered in the warm-up drills.
 - **View**: two fingers pan, pinch-zoom and twist-rotate on the iPad; space-drag to pan, wheel or trackpad pinch to zoom,
   Alt+wheel or R / ⇧R to rotate, 0 to fit on the Mac.

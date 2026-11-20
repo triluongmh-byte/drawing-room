@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MIN_LENGTH, createRuler, distanceToRuler, dragEnd, hitHandle, moveRuler, projectOnto, restoreRuler,
-  rulerAngle, rulerCenter, rulerLength, setAngle, snapDegrees, snapsToRuler,
+  rulerAngle, rulerCenter, rulerLength, setAngle, snapDegrees, snapsToRuler, followsRuler,
 } from "../src/drawing_room/static/js/ruler.js";
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
@@ -83,4 +83,15 @@ test("saved rulers are checked", () => {
   assert.equal(restoreRuler({ a: [0, 0], b: [0, 0] }), null);
   assert.equal(restoreRuler({ a: [0, "x"], b: [1, 1] }), null);
   assert.equal(restoreRuler(null), null);
+});
+
+test("a stroke by the ruler follows it only when it runs along it, either way", () => {
+  const ruler = createRuler(500, 375, 600, 0);
+  assert.equal(followsRuler(ruler, [300, 380], [500, 390]), true); // nearly level
+  assert.equal(followsRuler(ruler, [500, 380], [300, 370]), true); // the other way
+  assert.equal(followsRuler(ruler, [300, 380], [400, 430]), false); // 27° off: freehand
+  assert.equal(followsRuler(ruler, [300, 380], [300, 480]), false); // straight across
+  const tilted = createRuler(500, 375, 600, 30);
+  assert.equal(followsRuler(tilted, [0, 0], [Math.cos(Math.PI / 6) * 100, -Math.sin(Math.PI / 6) * 100]), true);
+  assert.equal(followsRuler(ruler, [1, 1], [1, 1]), true); // no direction yet
 });

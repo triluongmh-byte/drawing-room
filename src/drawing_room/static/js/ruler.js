@@ -86,6 +86,21 @@ export function snapsToRuler(ruler, point, reach) {
   return along && distance <= reach;
 }
 
+export const FOLLOW_DEGREES = 25;
+
+/**
+ * Whether a stroke heading from `from` to `to` runs along the ruler (either way), within `maxDegrees`.
+ * A stroke that starts by the ruler but heads off across it is drawn freehand, not pulled onto it.
+ */
+export function followsRuler(ruler, from, to, maxDegrees = FOLLOW_DEGREES) {
+  const sx = to[0] - from[0], sy = to[1] - from[1];
+  const rx = ruler.b[0] - ruler.a[0], ry = ruler.b[1] - ruler.a[1];
+  const lengths = Math.hypot(sx, sy) * Math.hypot(rx, ry);
+  if (!lengths) return true;
+  const cos = Math.abs(sx * rx + sy * ry) / lengths;
+  return cos >= Math.cos((maxDegrees * Math.PI) / 180);
+}
+
 /** Which handle is under `point`: "a", "b" (the ends), "move" (the middle), or null. */
 export function hitHandle(ruler, point, radius) {
   const near = (p) => Math.hypot(point[0] - p[0], point[1] - p[1]) <= radius;
