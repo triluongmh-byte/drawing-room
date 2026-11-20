@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **Bring back export, project files, paint bucket, colour picker** (PR #18, feat/restore-export-fill): lost when they were pushed after PR #5 merged.
 - **Draw from a picture** (feat/draw-from-picture): Claude copies an attached picture (~90%), looks again and redraws; only Sketch/Color/Line/Notes layers; never drops strokes when 24 layers are full.
 
 ## Ready for Deploy
