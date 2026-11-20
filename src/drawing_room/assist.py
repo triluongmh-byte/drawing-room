@@ -36,6 +36,8 @@ MAX_POINTS = 40000
 COORD_LIMIT = 6000
 STEP = 3.0  # paper units between sampled points
 STYLES = ("line", "construction")
+MAX_LAYER_NAME = 24
+FILLABLE = ("rect", "circle", "ellipse")  # plus a closed polyline
 
 SYSTEM_PROMPT = """You are a drawing assistant inside a hand-drawing practice app, a bit like the helper in a CAD
 program. The person tells you an idea ("draw a box in two-point perspective", "add a centre line", "sketch the cap of
@@ -63,8 +65,49 @@ Shapes (all numbers in paper units, angles in degrees, clockwise because y point
 Every shape may add "style": "line" (finished dark line, the default) or "construction" (light blue guide line the
 person draws over and later hides), and "color": "#rrggbb" for a coloured line.
 Use construction lines for guides, axes, boxes and perspective lines; use line for what should look finished.
-Set "clear_previous": true only when the person asks you to redo or remove what you drew before.
-When the person only asks a question, answer with "shapes": []. Use at most 150 shapes."""
+A shape may set its line "width" (0.5 to 8 paper units; default 1.6 for construction, 2.6 for line), its
+"opacity" (0.1 to 1, default 1) and "dash": true for a dashed line.
+Every shape may also add "layer": "<name>" to go on a layer of yours with that name (made the first time, reused
+after, never scored; without it the shape goes on your layer "Claude"), and "fill": true to paint a closed shape
+(rect, circle, ellipse, closed polyline) as a solid area in its colour instead of an outline. Layers are stacked
+in the order you first use them, the first one lowest.
+Set "clear_previous": true only when the person asks you to redo or remove what you drew before; it empties every
+layer of yours.
+When the person only asks a question, answer with "shapes": []. Use at most 150 shapes.
+
+PERSPECTIVE ILLUSTRATIONS. When the person asks you to draw a perspective illustration (a box in 1, 2 or 3-point
+perspective, a horizon, vanishing points), the student must be able to read it at a glance, and hiding the layer
+"Sketch" must leave a clean box while showing it again reveals the whole construction:
+- ONE box and ONE horizon per illustration. Never several boxes in one picture: if they want several cases, draw one
+  now and offer the next. A new illustration replaces the previous one ("clear_previous": true).
+- Four weights of line, from faint to strong, on three layers. Emit the shapes in this order (lowest layer first):
+  1. Layer "Sketch", the skeleton: the horizon and every construction line to a vanishing point. "width": 1,
+     "opacity": 0.4, "dash": true, style "construction". The horizon "#9a9a9a"; lines to the left or right vanishing
+     point "#e8a33d" (orange); lines to the vertical (third) vanishing point "#4a90e2" (blue). A small filled dot
+     (circle r 5, "fill": true, "opacity": 0.7, color "#555555") on each vanishing point. Hidden edges of the box,
+     if you show them at all, go here too, dashed.
+  2. Layer "Sketch", the finding lines, after the skeleton: "width": 1, "opacity": 0.7, solid, coloured by role.
+     To find the hidden back corner of the top (or bottom) face, draw the line from the far-left corner to the RIGHT
+     vanishing point and from the far-right corner to the LEFT vanishing point in "#2e9e5b" (green): they meet at the
+     back corner; put a small filled green dot (r 4) there. These are not the face's diagonals. Depth-dividing
+     diagonals are green too.
+  3. Layer "Color", the faces: each visible face as a closed polyline with "fill": true and "opacity": 0.6, one fixed
+     colour per face: left face "#8b7fd6" (purple), right face "#f08a6c" (coral), top or bottom face "#6cc287"
+     (green), and in one-point perspective the front face "#b9b3e8".
+  4. Layer "Line", the main lines, last so they sit on top: the box's VISIBLE edges only, solid, style "line",
+     "opacity": 1, color "#1f2328". "width": 2 for the far edges, 2.5 for the edges nearest the eye (the nearest
+     vertical and the edges meeting it). Never draw a hidden edge on this layer.
+- Construct it, do not guess: compute every corner as the intersection of lines to the vanishing points.
+  One-point: the front face is a true square; join its corners to the vanishing point and cut the back face at a
+  depth, parallel to the front. Two-point: vanishing points far apart at both ends of the horizon; draw the nearest
+  vertical edge, run both its ends to both vanishing points, place the two far verticals, and find the back corner
+  as above; verticals stay vertical. Three-point: as two-point plus a third vanishing point straight below the box
+  (seen from above) or above it (seen from below); the verticals all converge on it and the box tapers toward it.
+- A box below the horizon shows its top face; above the horizon, its bottom face. Left of a one-point vanishing point
+  it shows its right face, right of it its left face.
+- Then the reply is exactly four short sentences (at most 20 words each), in the person's language: whether the
+  horizon is high or low and which face shows; which colour of construction line goes to which vanishing point;
+  which face is filled with which colour; how to redraw the first step by hand."""
 
 
 class AssistError(RuntimeError):
@@ -178,6 +221,31 @@ def _style(shape: dict) -> tuple[str, str | None]:
     return style, color
 
 
+def _layer_name(value) -> str | None:
+    """A layer name Claude gave: one line, trimmed, at most MAX_LAYER_NAME characters, or None."""
+    if not isinstance(value, str):
+        return None
+    name = " ".join(value.split())[:MAX_LAYER_NAME].strip()
+    return name or None
+
+
+def _line_look(shape: dict) -> dict:
+    """The optional width, opacity and dash of a shape, kept only when they make sense."""
+    look = {}
+    for key, low, high in (("width", 0.5, 8.0), ("opacity", 0.1, 1.0)):
+        value = shape.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            look[key] = round(min(high, max(low, float(value))), 2)
+    if shape.get("dash") is True:
+        look["dash"] = True
+    return look
+
+
+def _closed(shape: dict) -> bool:
+    """Whether a shape encloses an area that can be filled."""
+    return shape.get("type") in FILLABLE or (shape.get("type") == "polyline" and shape.get("closed") is True)
+
+
 def shapes_to_strokes(shapes) -> tuple[list[dict], list[str]]:
     """Strokes ``{style, color, points}`` for the browser, and a note for each shape that was skipped."""
     if not isinstance(shapes, list):
@@ -194,8 +262,14 @@ def shapes_to_strokes(shapes) -> tuple[list[dict], list[str]]:
             skipped.append("too many points; the rest was left out")
             break
         style, color = _style(shape)
-        strokes.append({"style": style, "color": color,
-                        "points": [[round(x, 1), round(y, 1)] for x, y in points]})
+        stroke = {"style": style, "color": color, "points": [[round(x, 1), round(y, 1)] for x, y in points]}
+        layer = _layer_name(shape.get("layer"))
+        if layer:
+            stroke["layer"] = layer
+        if shape.get("fill") is True and _closed(shape):
+            stroke["fill"] = True
+        stroke.update(_line_look(shape))
+        strokes.append(stroke)
     if len(shapes) > MAX_SHAPES:
         skipped.append(f"only the first {MAX_SHAPES} shapes were drawn")
     return strokes, skipped
@@ -262,7 +336,14 @@ def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet) -> 
         if major:
             draw.text((2, at(x0, gy)[1] + 2), str(gy), fill=(90, 120, 170))
     draw.rectangle([at(0, 0), at(PAPER_W, PAPER_H)], outline=(150, 150, 150), width=1)
+    # Filled areas (Claude's painted faces) first, pale, so every line stays readable on top of them.
     for stroke in strokes or []:
+        points = [at(float(p[0]), float(p[1])) for p in stroke.get("points", []) if len(p) >= 2]
+        if stroke.get("fill") is True and len(points) >= 3:
+            draw.polygon(points, fill=(205, 222, 245) if stroke.get("assistant") else (215, 215, 215))
+    for stroke in strokes or []:
+        if stroke.get("fill") is True:
+            continue
         points = [at(float(p[0]), float(p[1])) for p in stroke.get("points", []) if len(p) >= 2]
         color = (70, 130, 220) if stroke.get("assistant") else (30, 30, 30)
         if len(points) == 1:
@@ -310,7 +391,7 @@ def build_prompt(message: str, history: list[dict], sheet, level: int, reference
         f"Reference: {reference_name or 'none'}",
         f"Sheet bounds: x {x0:g} to {x1:g}, y {y0:g} to {y1:g}. Reference frame: x 0 to {PAPER_W}, y 0 to {PAPER_H}.",
         image_note,
-        "In drawing.png the person's strokes are black and the shapes you drew before are blue.",
+        "In drawing.png the person's strokes are black and the shapes you drew before are blue (your filled areas pale blue).",
     ]
     turns = [turn for turn in history[-MAX_HISTORY:] if isinstance(turn, dict) and turn.get("text")]
     if turns:

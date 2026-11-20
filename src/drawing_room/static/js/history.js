@@ -41,13 +41,14 @@ export class History {
 
   /** Several strokes (what Claude drew for one message) as one undoable step. With `replace`, that layer's old
    *  strokes are removed in the same step. */
+  /** Add strokes in one undo step; `replace` (a layer id, or a list of them) empties those layers first. */
   addMany(strokes, { replace = null } = {}) {
     const layers = strokes.map((stroke) => this._layer(stroke.layer));
-    const replaced = replace ? this._layer(replace) : null;
-    const old = replaced ? [...replaced.strokes] : [];
+    const replaced = (Array.isArray(replace) ? replace : replace ? [replace] : []).map((id) => this._layer(id));
+    const old = replaced.map((layer) => [...layer.strokes]);
     this._run({
       apply: () => {
-        if (replaced) replaced.strokes.splice(0, replaced.strokes.length);
+        for (const layer of replaced) layer.strokes.splice(0, layer.strokes.length);
         strokes.forEach((stroke, i) => layers[i].strokes.push(stroke));
       },
       revert: () => {
@@ -55,7 +56,7 @@ export class History {
           const index = layers[i].strokes.lastIndexOf(stroke);
           if (index >= 0) layers[i].strokes.splice(index, 1);
         });
-        if (replaced) replaced.strokes.unshift(...old);
+        replaced.forEach((layer, i) => layer.strokes.unshift(...old[i]));
       },
     });
   }

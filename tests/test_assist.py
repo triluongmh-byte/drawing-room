@@ -190,3 +190,44 @@ def test_attachments_are_not_logged():
     from drawing_room.server import redact
     assert redact({"message": "hi", "attachments": ["data:image/png;base64,AAAA", 3]})["attachments"] == [
         "<26 chars>", "<not a string>"]
+
+
+def test_shapes_can_name_a_layer_and_fill_closed_shapes():
+    strokes, skipped = assist.shapes_to_strokes([
+        {"type": "polyline", "points": [[0, 0], [100, 0], [100, 100]], "closed": True, "fill": True,
+         "layer": "  Tô   mặt ", "color": "#8b7fd6"},
+        {"type": "line", "a": [0, 0], "b": [10, 0], "fill": True, "layer": "x" * 40},
+        {"type": "circle", "c": [50, 50], "r": 5, "fill": True, "layer": ""},
+        {"type": "polyline", "points": [[0, 0], [5, 5]], "fill": True},
+    ])
+    assert skipped == []
+    assert strokes[0]["layer"] == "Tô mặt" and strokes[0]["fill"] is True and strokes[0]["color"] == "#8b7fd6"
+    assert len(strokes[1]["layer"]) == assist.MAX_LAYER_NAME and "fill" not in strokes[1]  # a line has no area
+    assert "layer" not in strokes[2] and strokes[2]["fill"] is True
+    assert "fill" not in strokes[3]  # an open polyline has no area
+
+
+def test_the_prompt_teaches_the_perspective_layers():
+    for words in ['Layer "Sketch"', 'Layer "Color"', 'Layer "Line"', "ONE box", "clean box", "VISIBLE edges", "four short sentences",
+                  "the back corner"]:
+        assert words in assist.SYSTEM_PROMPT
+
+
+def test_filled_areas_are_drawn_under_the_lines():
+    image = assist.drawing_image(None, [
+        {"fill": True, "assistant": True, "points": [[100, 100], [300, 100], [300, 300], [100, 300]]},
+        {"points": [[100, 200], [300, 200]]}], (0, 0, 1000, 750))
+    scale = image.width / 1000
+    assert image.getpixel((round(200 * scale), round(150 * scale))) == (205, 222, 245)
+    assert image.getpixel((round(200 * scale), round(200 * scale))) == (30, 30, 30)
+
+
+def test_shapes_can_set_width_opacity_and_dash():
+    strokes, _ = assist.shapes_to_strokes([
+        {"type": "line", "a": [0, 0], "b": [50, 0], "width": 1, "opacity": 0.4, "dash": True},
+        {"type": "line", "a": [0, 0], "b": [50, 0], "width": 99, "opacity": -3, "dash": "yes"},
+        {"type": "line", "a": [0, 0], "b": [50, 0], "width": True, "opacity": float("nan")},
+    ])
+    assert (strokes[0]["width"], strokes[0]["opacity"], strokes[0]["dash"]) == (1.0, 0.4, True)
+    assert (strokes[1]["width"], strokes[1]["opacity"]) == (8.0, 0.1) and "dash" not in strokes[1]
+    assert "width" not in strokes[2] and "opacity" not in strokes[2]

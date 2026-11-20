@@ -99,6 +99,7 @@ const state = {
   marks: [], // miss regions from the last score, paper coordinates of the drawing
   paper: DEFAULT_PAPER, // the sheet's shape around the reference frame (paper.js)
   claudeLayer: null, // id of the layer Claude draws on, made the first time it draws
+  claudeLayers: {}, // more of Claude's layers, by the name it gave them ("Chân trời", "Hộp"…) -> layer id
   chat: [], // [{ role: "user" | "assistant", text }] for the open project
   assisting: false, // waiting for Claude
   submitted: false,
@@ -113,7 +114,7 @@ function drawingPayload({ withReference = true } = {}) {
   return {
     level: state.level, ...serializeDocument(state.history.doc), active: state.activeLayer,
     rulerOn: state.rulerOn, ruler: state.ruler, underlayOpacity: state.underlayState.opacity,
-    paper: state.paper, claudeLayer: state.claudeLayer, chat: state.chat.slice(-CHAT_KEEP),
+    paper: state.paper, claudeLayer: state.claudeLayer, claudeLayers: state.claudeLayers, chat: state.chat.slice(-CHAT_KEEP),
     ...(withReference ? { reference } : {}),
   };
 }
@@ -194,6 +195,8 @@ function applyDrawing(saved) {
   state.paper = paperId(saved?.paper);
   $("paper-size").value = state.paper;
   state.claudeLayer = typeof saved?.claudeLayer === "string" && getLayer(state.history.doc, saved.claudeLayer) ? saved.claudeLayer : null;
+  state.claudeLayers = Object.fromEntries(Object.entries(saved?.claudeLayers && typeof saved.claudeLayers === "object" ? saved.claudeLayers : {})
+    .filter(([name, id]) => typeof id === "string" && name.length <= 24 && getLayer(state.history.doc, id)));
   state.chat = Array.isArray(saved?.chat)
     ? saved.chat.filter((m) => m && typeof m.text === "string" && (m.role === "user" || m.role === "assistant"))
       .map((m) => {
@@ -1563,24 +1566,52 @@ function setAssisting(busy, label = "Claude is drawing…") {
   renderChat(busy ? bubble("assistant", label, "thinking") : null);
 }
 
-/** The layer Claude draws on: made on top the first time, not scored, and found again by id afterwards. */
-function ensureClaudeLayer() {
-  const existing = state.claudeLayer && getLayer(state.history.doc, state.claudeLayer);
+/**
+ * A layer Claude draws on: "Claude" without a name, or one per name it gives ("Chân trời", "Hộp"…). Made on top of
+ * the stack the first time, never scored, and found again by id afterwards (so renaming it does not make another).
+ */
+function ensureClaudeLayer(name = null) {
+  const id = name ? state.claudeLayers[name] : state.claudeLayer;
+  const existing = id && getLayer(state.history.doc, id);
   if (existing) return existing;
-  const layer = state.history.addLayer({ name: "Claude", scored: false }, state.history.doc.layers.at(-1).id);
-  if (layer) state.claudeLayer = layer.id;
+  // "Sketch" next to the person's own "Sketch" would be confusing: Claude's is "Claude Sketch".
+  const taken = name && state.history.doc.layers.some((other) => other.name === name);
+  const label = name ? (taken ? `Claude ${name}`.slice(0, 24) : name) : "Claude";
+  const layer = state.history.addLayer({ name: label, scored: false }, state.history.doc.layers.at(-1).id);
+  if (layer && name) state.claudeLayers = { ...state.claudeLayers, [name]: layer.id };
+  else if (layer) state.claudeLayer = layer.id;
   return layer;
 }
 
-/** Claude's shapes, already turned into points by the server, as ordinary ink strokes. */
-function claudeStrokes(drawn, layerId) {
+/** Ids of every layer Claude has drawn on that still exists. */
+function claudeLayerIds() {
+  return [state.claudeLayer, ...Object.values(state.claudeLayers)].filter((id) => id && getLayer(state.history.doc, id));
+}
+
+/**
+ * Claude's shapes, already turned into points by the server, as ordinary strokes on its layers: ink for lines,
+ * flat colour-brush areas for filled faces. Layers are made in the order the shapes first use them, lowest first.
+ * Returns { strokes, full } where `full` says a layer could not be made (24 is the most).
+ */
+function claudeStrokes(drawn) {
   const t0 = Math.round(performance.now());
-  return drawn.map((shape) => {
+  const strokes = [];
+  let full = false;
+  for (const shape of drawn) {
+    const layer = ensureClaudeLayer(typeof shape.layer === "string" && shape.layer ? shape.layer : null);
+    if (!layer) { full = true; continue; }
     const style = CLAUDE_STYLE[shape.style] ?? CLAUDE_STYLE.line;
-    const stroke = createStroke({ layer: layerId, tool: "ink", size: style.size, opacity: 1, color: shape.color ?? style.color });
+    const opacity = Number.isFinite(shape.opacity) ? shape.opacity : 1;
+    // Even, exact-width lines (the Shapes tool's pen), so Claude can tell faint guides from bold edges.
+    const stroke = shape.fill
+      ? createStroke({ layer: layer.id, tool: "brush", size: 1, opacity, color: shape.color ?? "#cfd8e3" })
+      : createStroke({ layer: layer.id, tool: "shape", size: Number.isFinite(shape.width) ? shape.width : style.size, opacity, color: shape.color ?? style.color });
+    if (shape.fill) stroke.fill = true;
+    else if (shape.dash) stroke.dash = true;
     shape.points.forEach(([x, y], i) => addPoint(stroke, x, y, 0.5, t0 + i, 0, 0));
-    return stroke;
-  }).filter((stroke) => stroke.points.length);
+    if (stroke.points.length) strokes.push(stroke);
+  }
+  return { strokes, full };
 }
 
 async function sendChat() {
@@ -1598,18 +1629,26 @@ async function sendChat() {
     const answer = await postJSON("/api/assist", {
       level: state.level, reference: referencePayload(), sheet: sheetRect(state.paper), message: text, history,
       attachments: pictures.map((picture) => picture.full),
-      strokes: strokesForScoring(state.history.doc, serializeStroke)
-        .map((stroke) => ({ ...stroke, assistant: stroke.layer === state.claudeLayer })),
+      // Claude's own strokes (on any of its layers) are marked, so it never takes them for the person's ink.
+      strokes: (() => {
+        const mine = new Set(claudeLayerIds());
+        const filled = new Set(allStrokes(state.history.doc).filter((stroke) => stroke.fill).map((stroke) => stroke.id));
+        return strokesForScoring(state.history.doc, serializeStroke)
+          .map((stroke) => ({ ...stroke, assistant: mine.has(stroke.layer), ...(filled.has(stroke.id) ? { fill: true } : {}) }));
+      })(),
     });
     let note = "";
     if (answer.strokes.length || answer.clear_previous) {
-      const layer = ensureClaudeLayer();
-      if (!layer) note = " (No room for Claude's layer: 24 layers is the most.)";
-      else {
-        state.history.addMany(claudeStrokes(answer.strokes, layer.id), { replace: answer.clear_previous ? layer.id : null });
+      // Starting over empties every layer of Claude's, in the same undo step as the new drawing.
+      const replace = answer.clear_previous ? claudeLayerIds() : [];
+      const { strokes, full } = claudeStrokes(answer.strokes);
+      if (strokes.length || replace.length) {
+        state.history.addMany(strokes, { replace });
         afterChange();
-        if (!layer.visible) note = " (Claude's layer is hidden: tap 👁 in Layers to see it.)";
       }
+      if (full) note = " (No room for all of Claude's layers: 24 layers is the most.)";
+      const hidden = [...new Set(strokes.map((stroke) => stroke.layer))].map((id) => getLayer(state.history.doc, id)).filter((layer) => !layer.visible);
+      if (hidden.length) note += ` (${hidden.map((layer) => layer.name).join(", ")} ${hidden.length === 1 ? "is" : "are"} hidden: tap the eye in Layers to see ${hidden.length === 1 ? "it" : "them"}.)`;
     }
     if (answer.skipped?.length) note += ` (${answer.skipped.length} shape${answer.skipped.length === 1 ? "" : "s"} could not be drawn.)`;
     pushChat("assistant", answer.reply + note);
