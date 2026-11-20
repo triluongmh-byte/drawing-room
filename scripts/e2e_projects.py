@@ -60,7 +60,7 @@ with sync_playwright() as p:
         page = context.new_page()
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(URL)
+        page.goto(URL + "?practice")
         ready(page)
         return page
 
@@ -86,11 +86,14 @@ with sync_playwright() as p:
     mac.reload(); ready(mac)
     check(mac.evaluate("() => window.drawingRoom.state.paper") == "a4-portrait", "the paper size is kept with the project")
 
-    # New project, named straight away.
+    # New project, named straight away. It starts on blank paper even when this one draws from a reference.
+    mac.eval_on_selector("#reference", "el => { el.value = 'line'; el.dispatchEvent(new Event('change')); }")
+    check(mac.evaluate("() => window.drawingRoom.state.reference?.id") == "line", "this project draws from the line")
     mac.click("#project-button")
     mac.click("#project-new")
     mac.wait_for_function("() => document.activeElement && document.activeElement.id === 'project-rename'")
     check(mac.evaluate(COUNT) == 0, "a new project starts empty")
+    check(mac.evaluate("() => window.drawingRoom.state.reference") is None, "a new project starts on blank paper")
     mac.fill("#project-rename", "Apple study")
     mac.press("#project-rename", "Enter")
     mac.wait_for_function("() => window.drawingRoom.state.project?.name === 'Apple study'")
@@ -145,8 +148,24 @@ with sync_playwright() as p:
     mac.wait_for_function("() => window.drawingRoom.state.project && window.drawingRoom.state.project.name !== 'My first drawing'")
     check(mac.evaluate(COUNT) == 0, f"never zero projects: {mac.evaluate(NAME)}")
 
-    top = mac.eval_on_selector_all(".toolbar > *:not([hidden])", "els => { const mids = els.map(e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }); return Math.max(...mids) - Math.min(...mids); }")
+    top = mac.eval_on_selector_all("header > *:not([hidden]):not(select)", "els => { const mids = els.map(e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }); return Math.max(...mids) - Math.min(...mids); }")
     check(top < 8, "the toolbar is still one row at 1180 px")
+
+    # Without ?practice the app is free drawing: no practice menu, no score or reference panels, and a project
+    # saved with a reference opens on blank paper (the reference stays in the file).
+    mac.eval_on_selector("#reference", "el => { el.value = 'line'; el.dispatchEvent(new Event('change')); }")
+    saved(mac)
+    free = mac.context.new_page()
+    free.on("pageerror", lambda e: errors.append(str(e)))
+    free.goto(URL)
+    ready(free)
+    check(not free.is_visible("#mode-button"), "free drawing: no practice menu")
+    check(not free.is_visible("[data-panel-toggle=coach]") and not free.is_visible("[data-panel-toggle=reference]"),
+          "free drawing: no score or reference buttons")
+    check(not free.is_visible("#panel-reference") and not free.is_visible("#panel-coach"), "free drawing: their panels stay shut")
+    check(free.evaluate("() => window.drawingRoom.state.reference") is None, "free drawing: a saved reference is not shown")
+    check(free.evaluate("() => window.drawingRoom.state.underlay") is None, "free drawing: nothing under the paper")
+    check(free.is_visible("#toolbox") and free.is_visible("[data-panel-toggle=chat]"), "free drawing: tools and Claude stay")
     check(not errors, f"no console errors: {errors}")
     browser.close()
 

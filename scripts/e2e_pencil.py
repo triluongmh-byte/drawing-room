@@ -7,6 +7,28 @@ Needs a running server. Run:
 import math, sys
 from playwright.sync_api import sync_playwright
 
+
+# The level and reference live in the practice menu, the tools in the toolbox flyouts: set them the way a tap would.
+def pick(page, selector, value):
+    page.eval_on_selector(selector, "(el, v) => { el.value = v; el.dispatchEvent(new Event('change')); }", value)
+
+
+def tool(page, name):
+    """Pick a tool from the toolbox: tap its group, then the tool in the flyout; Escape closes the flyout."""
+    if name == "eraser":
+        page.click("#toolbox [data-tool=eraser]")
+        return
+    group = "paint" if name in ("brush", "shade", "highlighter") else "write"
+    if not page.is_visible(f"#tool-flyout[data-group={group}]"):
+        page.click(f"#toolbox [data-group={group}]")
+    page.click(f"#tool-flyout [data-tool={name}]")
+    page.keyboard.press("Escape")
+
+
+def open_panel(page, name):
+    if page.get_attribute(f"[data-panel-toggle={name}]", "aria-expanded") != "true":
+        page.click(f"[data-panel-toggle={name}]")
+
 URL, OUT = sys.argv[1], sys.argv[2]
 
 DRAW = """
@@ -42,17 +64,17 @@ with sync_playwright() as p:
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(URL)
+    page.goto(URL + "?practice")
     page.evaluate("localStorage.clear()")
     page.reload()
     page.wait_for_timeout(800)
 
-    top = page.eval_on_selector_all(".toolbar > *:not([hidden])", "els => { const mids = els.map(e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }); return Math.max(...mids) - Math.min(...mids) < 8 ? 1 : 2; }")
-    check(top == 1, "the toolbar is one row at 1180 px")
+    top = page.eval_on_selector_all("header > *:not([hidden]):not(select)", "els => { const mids = els.map(e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }); return Math.max(...mids) - Math.min(...mids) < 8 ? 1 : 2; }")
+    check(top == 1, "the top bar is one row at 1180 px")
     check(not page.is_visible("#ruler-angle"), "the ruler angle hides while the ruler is off")
 
-    page.select_option("#level", "2")
-    page.select_option("#reference", "circle")
+    pick(page, "#level", "2")
+    pick(page, "#reference", "circle")
     page.wait_for_timeout(300)
 
     def draw(points, kind="pen"):
@@ -60,7 +82,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(30)
 
     # Pressure: thin pale line vs thick dark line.
-    page.click("[data-tool=pencil]")
+    tool(page, "pencil")
     draw([[100 + i * 3, 100, 0.1, 0] for i in range(80)])
     draw([[100 + i * 3, 160, 0.95, 0] for i in range(80)])
     light, firm = page.evaluate(STROKES)
@@ -72,7 +94,7 @@ with sync_playwright() as p:
     check(tilted["shade"] and tilted["opacity"] < 0.45, f"a tilted pen shades lightly: {tilted}")
 
     # The Shade tool lays the pencil flat for a mouse or trackpad, at its own size.
-    page.click("[data-tool=shade]")
+    tool(page, "shade")
     check(page.input_value("#size") == "26", f"Shade has its own size: {page.input_value('#size')}")
     page.eval_on_selector("#size", "el => { el.value = '40'; el.dispatchEvent(new Event('input')); }")
     for k in range(4):
@@ -82,18 +104,20 @@ with sync_playwright() as p:
 
     # Colored pencil: a picked colour is used straight away, even when the picker only sends `change` (Safari),
     # and it stays when switching tools.
-    page.click("[data-tool=pencil]")
+    tool(page, "pencil")
     check(page.input_value("#size") == "3", "the pencil kept its own size")
     page.eval_on_selector("#color", "el => { el.value = '#2f6fd0'; el.dispatchEvent(new Event('change')); }")
     draw([[500 + 220 * math.cos(a / 60), 375 + 220 * math.sin(a / 60), 0.7, 0] for a in range(0, 380)])
     check(page.evaluate(STROKES)[-1]["color"] == "#2f6fd0", "the pencil draws in the picked colour (change only)")
-    page.click("[data-tool=ink]")
+    tool(page, "ink")
     check(page.input_value("#color") == "#2f6fd0", "the ink keeps the picked colour")
-    page.click("[data-tool=brush]")
+    tool(page, "brush")
     page.eval_on_selector("#color", "el => { el.value = '#e0604a'; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }")
-    page.click("[data-tool=pencil]")
-    check(page.input_value("#color") == "#e0604a", "back on the pencil, the colour is still the last one picked")
-    page.click("[data-tool=eraser]")
+    tool(page, "pencil")
+    check(page.input_value("#color") == "#2f6fd0", "back on the pencil, it keeps its own group's colour, not the brush's")
+    tool(page, "highlighter")
+    check(page.input_value("#color") == "#e0604a", "the highlighter shares the paint group's colour")
+    tool(page, "eraser")
     check(not page.is_visible("#color"), "the eraser has no colour")
 
     page.screenshot(path=f"{OUT}/11-pencil.png")
@@ -107,15 +131,15 @@ with sync_playwright() as p:
     # Settings survive a reload.
     page.reload(); page.wait_for_timeout(800)
     check(page.evaluate("() => window.drawingRoom.state.tool") == "eraser", "the tool survives a reload")
-    page.click("[data-tool=shade]")
+    tool(page, "shade")
     check(page.input_value("#size") == "40", "tool sizes survive a reload")
     check(page.evaluate(STROKES)[2]["shade"], "shading survives a reload")
 
-    # Portrait: the toolbar wraps to two rows, nothing hidden off the edge.
+    # Portrait: the top bar still fits, nothing hidden off the edge.
     page.set_viewport_size({"width": 820, "height": 1180})
     page.wait_for_timeout(300)
-    bar = page.eval_on_selector(".toolbar", "el => [el.scrollWidth, el.clientWidth]")
-    check(bar[0] <= bar[1], f"portrait toolbar fits: {bar}")
+    bar = page.eval_on_selector("header", "el => [el.scrollWidth, el.clientWidth]")
+    check(bar[0] <= bar[1], f"portrait top bar fits: {bar}")
     check(page.is_visible("#clear"), "Clear all is reachable in portrait")
     page.screenshot(path=f"{OUT}/12-portrait.png")
 

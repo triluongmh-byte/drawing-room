@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TOOLS, clampSize, restoreToolSettings, shareColor, stepSize } from "../src/drawing_room/static/js/tools.js";
+import { COLORED, GROUPS, TOOLS, clampSize, groupOf, restoreToolSettings, shareColor, stepSize } from "../src/drawing_room/static/js/tools.js";
 
 test("every tool starts at its default size; colours only where a tool has one", () => {
   const settings = restoreToolSettings();
@@ -28,9 +28,40 @@ test("sizes round to half pixels and step by about a tenth of the range", () => 
   assert.equal(stepSize("pencil", 12, 1), 12);
 });
 
-test("a picked colour is shared by every tool that has one, the eraser keeps none", () => {
-  const settings = shareColor(restoreToolSettings(), "#2F6FD0");
-  for (const tool of ["pencil", "shade", "ink", "brush"]) assert.equal(settings[tool].color, "#2f6fd0");
+test("a picked colour is shared within the tool's group only, the eraser keeps none", () => {
+  const settings = shareColor(restoreToolSettings(), "#2F6FD0", "ink");
+  for (const tool of ["pencil", "ink", "marker"]) assert.equal(settings[tool].color, "#2f6fd0");
+  // The paint tools keep their own: the highlighter stays yellow when the pencil turns blue.
+  assert.equal(settings.highlighter.color, TOOLS.highlighter.color);
+  assert.equal(settings.brush.color, TOOLS.brush.color);
+  shareColor(settings, "#123456", "highlighter");
+  for (const tool of ["brush", "shade", "highlighter"]) assert.equal(settings[tool].color, "#123456");
+  assert.equal(settings.pencil.color, "#2f6fd0");
   assert.equal(settings.eraser.color, undefined);
-  assert.equal(shareColor(settings, "red").pencil.color, "#2f6fd0"); // not a colour: ignored
+  assert.equal(shareColor(settings, "red", "pencil").pencil.color, "#2f6fd0"); // not a colour: ignored
+  assert.equal(shareColor(settings, "#ffffff", "eraser").pencil.color, "#2f6fd0"); // no group: ignored
+});
+
+test("tools sit in three groups, each with six colours to pick from; the eraser in none", () => {
+  assert.deepEqual(GROUPS.write.tools, ["pencil", "ink", "marker"]);
+  assert.deepEqual(GROUPS.paint.tools, ["brush", "shade", "highlighter"]);
+  assert.deepEqual(GROUPS.shapes.tools, ["shape"]);
+  assert.equal(groupOf("shape"), "shapes");
+  assert.equal(TOOLS.shape.thinning, 0); // an even line, whatever the pressure
+  for (const group of Object.values(GROUPS)) {
+    assert.equal(group.palette.length, 6);
+    for (const color of group.palette) assert.match(color, /^#[0-9a-f]{6}$/);
+  }
+  assert.equal(groupOf("marker"), "write");
+  assert.equal(groupOf("shade"), "paint");
+  assert.equal(groupOf("eraser"), null);
+  assert.deepEqual([...COLORED].sort(), Object.keys(TOOLS).filter((t) => t !== "eraser").sort());
+});
+
+test("the marker is even-width and opaque, the highlighter wide, see-through and multiplied", () => {
+  assert.equal(TOOLS.marker.thinning, 0);
+  assert.ok(TOOLS.marker.opacity > 0.8);
+  assert.equal(TOOLS.highlighter.blend, "multiply");
+  assert.ok(TOOLS.highlighter.opacity < 0.5);
+  assert.ok(TOOLS.highlighter.size > TOOLS.marker.size);
 });

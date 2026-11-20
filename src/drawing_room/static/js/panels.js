@@ -1,8 +1,8 @@
 // Floating panels over the paper: the toolbar buttons open and close them, so the paper keeps the whole screen.
 
 const KEY = "drawing-room:panels";
-// Panels on the right share one spot, so only one of them is open at a time. The reference card sits on its own.
-const RIGHT = ["layers", "coach"];
+// Panels that share one spot, so only one of them is open at a time. Layers sit in their own strip at the bottom.
+const RIGHT = [];
 
 function load() {
   try { return JSON.parse(localStorage.getItem(KEY)) ?? {}; } catch { return {}; }
@@ -14,13 +14,13 @@ function store(open) {
 
 export function initPanels() {
   const buttons = [...document.querySelectorAll("[data-panel-toggle]")];
-  const open = { reference: true, chat: true, ...load() };
+  const open = { reference: false, layers: true, chat: true, ...load() };
 
   const apply = () => {
     for (const button of buttons) {
       const name = button.dataset.panelToggle;
       const panel = document.getElementById(`panel-${name}`);
-      panel.hidden = !open[name];
+      panel.hidden = !open[name] || button.dataset.off !== undefined;
       button.classList.toggle("active", !!open[name]);
       button.setAttribute("aria-expanded", String(!!open[name]));
     }

@@ -7,6 +7,28 @@ Needs a running server. Run:
 import math, sys
 from playwright.sync_api import sync_playwright
 
+
+# The level and reference live in the practice menu, the tools in the toolbox flyouts: set them the way a tap would.
+def pick(page, selector, value):
+    page.eval_on_selector(selector, "(el, v) => { el.value = v; el.dispatchEvent(new Event('change')); }", value)
+
+
+def tool(page, name):
+    """Pick a tool from the toolbox: tap its group, then the tool in the flyout; Escape closes the flyout."""
+    if name == "eraser":
+        page.click("#toolbox [data-tool=eraser]")
+        return
+    group = "paint" if name in ("brush", "shade", "highlighter") else "write"
+    if not page.is_visible(f"#tool-flyout[data-group={group}]"):
+        page.click(f"#toolbox [data-group={group}]")
+    page.click(f"#tool-flyout [data-tool={name}]")
+    page.keyboard.press("Escape")
+
+
+def open_panel(page, name):
+    if page.get_attribute(f"[data-panel-toggle={name}]", "aria-expanded") != "true":
+        page.click(f"[data-panel-toggle={name}]")
+
 URL, OUT = sys.argv[1], sys.argv[2]
 
 DRAW = """
@@ -49,14 +71,14 @@ with sync_playwright() as p:
     logs = []
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") else None)
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
-    page.goto(URL)
+    page.goto(URL + "?practice")
     page.wait_for_function("() => window.drawingRoom && window.drawingRoom.state.references.length > 0")
     page.evaluate("() => localStorage.clear()")
     page.reload()
     page.wait_for_function("() => window.drawingRoom.state.references.length > 0")
-    page.click("[data-panel-toggle=layers]")  # the layers float over the paper; open them
-    page.select_option("#level", "2")
-    page.select_option("#reference", "circle")
+    open_panel(page, "layers")  # the layers float over the paper; open them
+    pick(page, "#level", "2")
+    pick(page, "#reference", "circle")
     page.wait_for_timeout(300)
 
     rows = page.eval_on_selector_all("#layers li", "els => els.map(e => e.querySelector('.name').value || e.querySelector('.name').textContent)")
@@ -155,7 +177,7 @@ with sync_playwright() as p:
     check(page.evaluate("() => window.drawingRoom.state.rulerOn") and page.input_value("#ruler-angle") == "30", "ruler survives reload")
 
     # Level 0 hides the ruler.
-    page.select_option("#level", "0")
+    pick(page, "#level", "0")
     page.wait_for_timeout(200)
     check(not page.is_visible("#ruler-toggle"), "no ruler in warm-up drills")
 
