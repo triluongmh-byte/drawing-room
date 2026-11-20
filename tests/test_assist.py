@@ -195,14 +195,14 @@ def test_attachments_are_not_logged():
 def test_shapes_can_name_a_layer_and_fill_closed_shapes():
     strokes, skipped = assist.shapes_to_strokes([
         {"type": "polyline", "points": [[0, 0], [100, 0], [100, 100]], "closed": True, "fill": True,
-         "layer": "  Tô   mặt ", "color": "#8b7fd6"},
+         "layer": "  color ", "color": "#8b7fd6"},
         {"type": "line", "a": [0, 0], "b": [10, 0], "fill": True, "layer": "x" * 40},
         {"type": "circle", "c": [50, 50], "r": 5, "fill": True, "layer": ""},
         {"type": "polyline", "points": [[0, 0], [5, 5]], "fill": True},
     ])
     assert skipped == []
-    assert strokes[0]["layer"] == "Tô mặt" and strokes[0]["fill"] is True and strokes[0]["color"] == "#8b7fd6"
-    assert len(strokes[1]["layer"]) == assist.MAX_LAYER_NAME and "fill" not in strokes[1]  # a line has no area
+    assert strokes[0]["layer"] == "Color" and strokes[0]["fill"] is True and strokes[0]["color"] == "#8b7fd6"
+    assert "layer" not in strokes[1] and "fill" not in strokes[1]  # not a known layer name; a line has no area
     assert "layer" not in strokes[2] and strokes[2]["fill"] is True
     assert "fill" not in strokes[3]  # an open polyline has no area
 
@@ -287,3 +287,63 @@ def test_labels_show_in_what_claude_sees():
     scale = image.width / 1000
     box = image.crop((round(390 * scale), round(280 * scale), round(560 * scale), round(320 * scale)))
     assert (70, 130, 220) in [c for _, c in box.getcolors(100000)]
+
+
+def test_claude_only_names_its_four_layers():
+    strokes, _ = assist.shapes_to_strokes([
+        {"type": "line", "a": [0, 0], "b": [9, 0], "layer": layer} for layer in ["sketch", "LINE", "Notes", "Tia", "Bong", ""]])
+    assert [s.get("layer") for s in strokes] == ["Sketch", "Line", "Notes", None, None, None]
+
+
+class TwoAnswers(FakeRunner):
+    """Answers the first question with one JSON text and the second with another."""
+
+    def __init__(self, *answers):
+        super().__init__()
+        self.answers = list(answers)
+
+    def __call__(self, arguments, input, cwd, **kwargs):
+        self.reply = self.answers.pop(0)
+        return super().__call__(arguments, input, cwd, **kwargs)
+
+
+def _picture():
+    from PIL import Image
+    return assist.prepare_attachment(_data_url(Image.new("RGB", (60, 40), "gray")))
+
+
+def test_drawing_from_a_picture_looks_again_and_redraws():
+    first = json.dumps({"reply": "Draft.", "shapes": [{"type": "rect", "x": 100, "y": 100, "w": 200, "h": 100}]})
+    second = json.dumps({"reply": "Matched the two blocks.", "shapes": [
+        {"type": "rect", "x": 100, "y": 100, "w": 200, "h": 300, "layer": "Line"},
+        {"type": "rect", "x": 300, "y": 250, "w": 150, "h": 150, "layer": "Line"}]})
+    runner = TwoAnswers(first, second)
+    answer = assist.assist(None, None, [], None, 2, "vẽ giống hình này", runner=runner, attachments=[_picture()])
+    assert answer["reply"] == "Matched the two blocks." and len(answer["strokes"]) == 2
+    assert len(runner.calls) == 2
+    check = runner.calls[1]
+    assert check["files"] == ["attachment-1.png", "draft.png"]
+    assert "REDRAW CHECK" in check["prompt"] and "COMPLETE corrected set" in check["prompt"]
+    assert "vẽ giống hình này" in check["prompt"] and "Draft." in check["prompt"]
+
+
+def test_a_failed_redraw_keeps_the_first_drawing():
+    first = json.dumps({"reply": "Draft.", "shapes": [{"type": "line", "a": [0, 0], "b": [50, 0]}]})
+    answer = assist.assist(None, None, [], None, 2, "copy it", runner=TwoAnswers(first, "sorry, no JSON"),
+                           attachments=[_picture()])
+    assert answer["reply"] == "Draft." and len(answer["strokes"]) == 1
+
+
+def test_no_redraw_without_a_picture_or_without_a_drawing():
+    runner = TwoAnswers(json.dumps({"reply": "Box.", "shapes": [{"type": "line", "a": [0, 0], "b": [50, 0]}]}))
+    assist.assist(None, None, [], None, 2, "draw a line", runner=runner)
+    runner2 = TwoAnswers(json.dumps({"reply": "Nice photo.", "shapes": []}))
+    assist.assist(None, None, [], None, 2, "what is this?", runner=runner2, attachments=[_picture()])
+    assert len(runner.calls) == 1 and len(runner2.calls) == 1
+
+
+def test_the_prompt_copies_pictures_instead_of_drawing_the_demo_box():
+    prompt = assist.SYSTEM_PROMPT
+    assert "DRAWING FROM A PICTURE" in prompt and "90% alike" in prompt
+    assert prompt.index("DRAWING FROM A PICTURE") < prompt.index("PERSPECTIVE ILLUSTRATIONS")
+    assert "has not attached a picture to copy" in prompt

@@ -1710,16 +1710,29 @@ function setAssisting(busy, label = "Claude is drawing…") {
  * A layer Claude draws on: "Claude" without a name, or one per name it gives ("Chân trời", "Hộp"…). Made on top of
  * the stack the first time, never scored, and found again by id afterwards (so renaming it does not make another).
  */
-function ensureClaudeLayer(name = null) {
+function ensureClaudeLayer(name = null, { busy = new Set(), emptying = new Set() } = {}) {
   const id = name ? state.claudeLayers[name] : state.claudeLayer;
   const existing = id && getLayer(state.history.doc, id);
   if (existing) return existing;
   // "Sketch" next to the person's own "Sketch" would be confusing: Claude's is "Claude Sketch".
   const taken = name && state.history.doc.layers.some((other) => other.name === name);
   const label = name ? (taken ? `Claude ${name}`.slice(0, 24) : name) : "Claude";
-  const layer = state.history.addLayer({ name: label, scored: false }, state.history.doc.layers.at(-1).id);
-  if (layer && name) state.claudeLayers = { ...state.claudeLayers, [name]: layer.id };
-  else if (layer) state.claudeLayer = layer.id;
+  let layer = state.history.addLayer({ name: label, scored: false }, state.history.doc.layers.at(-1).id);
+  if (!layer) {
+    // No room for another layer (24 is the most): take over one of Claude's that is empty, or about to be emptied,
+    // and not used by this answer; failing that, share one of Claude's layers. Never drop the drawing.
+    const mine = claudeLayerIds().map((lid) => getLayer(state.history.doc, lid));
+    layer = mine.find((l) => !busy.has(l.id) && (!l.strokes.length || emptying.has(l.id)));
+    if (layer) {
+      state.claudeLayers = Object.fromEntries(Object.entries(state.claudeLayers).filter(([, lid]) => lid !== layer.id));
+      if (state.claudeLayer === layer.id) state.claudeLayer = null;
+      state.history.renameLayer(layer.id, label);
+    } else {
+      return mine.find((l) => busy.has(l.id)) ?? mine[0] ?? null;
+    }
+  }
+  if (name) state.claudeLayers = { ...state.claudeLayers, [name]: layer.id };
+  else state.claudeLayer = layer.id;
   return layer;
 }
 
@@ -1731,15 +1744,18 @@ function claudeLayerIds() {
 /**
  * Claude's shapes, already turned into points by the server, as ordinary strokes on its layers: ink for lines,
  * flat colour-brush areas for filled faces. Layers are made in the order the shapes first use them, lowest first.
- * Returns { strokes, full } where `full` says a layer could not be made (24 is the most).
+ * `emptying` are the ids of Claude's layers this answer empties first. Returns { strokes, full } where `full` says
+ * some shapes had no layer of Claude's to go on at all (24 layers, none of them Claude's).
  */
-function claudeStrokes(drawn) {
+function claudeStrokes(drawn, emptying = new Set()) {
   const t0 = Math.round(performance.now());
   const strokes = [];
+  const busy = new Set();
   let full = false;
   for (const shape of drawn) {
-    const layer = ensureClaudeLayer(typeof shape.layer === "string" && shape.layer ? shape.layer : null);
+    const layer = ensureClaudeLayer(typeof shape.layer === "string" && shape.layer ? shape.layer : null, { busy, emptying });
     if (!layer) { full = true; continue; }
+    busy.add(layer.id);
     const style = CLAUDE_STYLE[shape.style] ?? CLAUDE_STYLE.line;
     const opacity = Number.isFinite(shape.opacity) ? shape.opacity : 1;
     // Even, exact-width lines (the Shapes tool's pen), so Claude can tell faint guides from bold edges.
@@ -1771,7 +1787,7 @@ async function sendChat() {
   renderNotes();
   if (state.noting) setNoting(false);
   pushChat("user", [text, notesSummary(notes)].filter(Boolean).join("\n"), pictures.map((picture) => picture.thumb));
-  setAssisting(true);
+  setAssisting(true, pictures.length ? "Claude is drawing, then checking it against your picture…" : "Claude is drawing…");
   try {
     const answer = await postJSON("/api/assist", {
       level: state.level, reference: referencePayload(), sheet: drawnArea(), message: text, history,
@@ -1791,12 +1807,12 @@ async function sendChat() {
     if (answer.strokes.length || answer.clear_previous) {
       // Starting over empties every layer of Claude's, in the same undo step as the new drawing.
       const replace = answer.clear_previous ? claudeLayerIds() : [];
-      const { strokes, full } = claudeStrokes(answer.strokes);
+      const { strokes, full } = claudeStrokes(answer.strokes, new Set(replace));
       if (strokes.length || replace.length) {
         state.history.addMany(strokes, { replace });
         afterChange();
       }
-      if (full) note = " (No room for all of Claude's layers: 24 layers is the most.)";
+      if (full) note = " (No room for a layer of Claude's: 24 layers is the most. Delete an empty one and ask again.)";
       const hidden = [...new Set(strokes.map((stroke) => stroke.layer))].map((id) => getLayer(state.history.doc, id)).filter((layer) => !layer.visible);
       if (hidden.length) note += ` (${hidden.map((layer) => layer.name).join(", ")} ${hidden.length === 1 ? "is" : "are"} hidden: tap the eye in Layers to see ${hidden.length === 1 ? "it" : "them"}.)`;
     }
