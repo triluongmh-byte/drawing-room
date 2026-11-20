@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **Dashed shapes** (feat/dashed-shapes): a Solid / Dashed toggle in the Shapes flyout; dashes scale with the line size.
 
 ## Ready for Deploy
 - **Toolbox + shadcn UI** (PR #6, merged): practice put away for now (free drawing; `?practice` brings it back), blank paper by default (no surprise reference line), practice menu instead of the level dropdown, left toolbox with Write (pencil, ink, marker), Paint (brush, shade, highlighter) and Shapes (line, rectangle, ellipse, triangle, diamond, arrow) flyouts with colours, a ruler that only grabs strokes running along it, layers as a fixed-width bottom strip with thumbnails that scrolls sideways, Tailwind + shadcn tokens + Lucide icons.

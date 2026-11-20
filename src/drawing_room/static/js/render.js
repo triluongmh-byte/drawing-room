@@ -2,6 +2,7 @@
 
 import { getStroke } from "../vendor/perfect-freehand.js";
 import { paintedSize, pencilOpacity } from "./pencil.js";
+import { dashPattern, dashSegments } from "./shapes.js";
 import { TOOLS } from "./tools.js";
 
 export { TOOLS } from "./tools.js";
@@ -23,15 +24,23 @@ export function strokePath(stroke, { last = false } = {}) {
   const tool = TOOLS[stroke.tool] || TOOLS.ink;
   // A pencil laid on its side shades: broad and soft rather than a pressure-thinned line.
   const tilted = stroke.tool === "pencil" && stroke.shade;
-  const outline = getStroke(stroke.points.map(([x, y, p]) => [x, y, p]), {
+  const options = {
     size: paintedSize(stroke),
     thinning: tilted ? TOOLS.shade.thinning : tool.thinning ?? 0.5,
     smoothing: tool.smoothing ?? 0.5,
     streamline: tool.streamline ?? 0.5,
     simulatePressure: stroke.simulatePressure,
     last,
-  });
-  return outlineToPath(outline);
+  };
+  if (stroke.dash) {
+    // A dashed shape: each dash is its own little stroke, all in one path.
+    const path = new Path2D();
+    for (const piece of dashSegments(stroke.points, ...dashPattern(stroke.size))) {
+      path.addPath(outlineToPath(getStroke(piece.map(([x, y]) => [x, y, 0.5]), { ...options, last: true })));
+    }
+    return path;
+  }
+  return outlineToPath(getStroke(stroke.points.map(([x, y, p]) => [x, y, p]), options));
 }
 
 const cache = new WeakMap();

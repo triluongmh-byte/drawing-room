@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SHAPES, bigEnough, shapePoints, snapAngle } from "../src/drawing_room/static/js/shapes.js";
+import { SHAPES, bigEnough, dashPattern, dashSegments, shapePoints, snapAngle } from "../src/drawing_room/static/js/shapes.js";
 
 const close = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
 const bounds = (pts) => ({
@@ -69,4 +69,37 @@ test("an arrow is one stroke: shaft to the tip, then both wings back from it", (
 test("a tap is not a shape", () => {
   assert.equal(bigEnough([10, 10], [11, 12]), false);
   assert.equal(bigEnough([10, 10], [10, 20]), true);
+});
+
+const length = (pts) => pts.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
+
+test("a line is cut into dashes of the dash length with gaps between", () => {
+  const pieces = dashSegments([[0, 0], [100, 0]], 10, 5); // 10 on, 5 off: dashes start at 0, 15, 30, ... 90
+  assert.equal(pieces.length, 7);
+  assert.deepEqual(pieces[0], [[0, 0], [10, 0]]);
+  assert.deepEqual(pieces[1], [[15, 0], [25, 0]]);
+  for (const piece of pieces.slice(0, -1)) assert.ok(close(length(piece), 10));
+  assert.deepEqual(pieces.at(-1), [[90, 0], [100, 0]]);
+});
+
+test("dashes run on round corners: a dash can bend round one", () => {
+  const pieces = dashSegments([[0, 0], [6, 0], [6, 20]], 10, 4);
+  assert.deepEqual(pieces[0], [[0, 0], [6, 0], [6, 4]]); // 6 along, then 4 down the next side
+  assert.ok(close(length(pieces[0]), 10));
+  assert.deepEqual(pieces[1][0], [6, 8]);
+});
+
+test("every dash of a dashed shape has at least two points; nothing to cut gives nothing", () => {
+  for (const kind of Object.keys(SHAPES)) {
+    const pieces = dashSegments(shapePoints(kind, [0, 0], [180, 120]), ...dashPattern(3));
+    assert.ok(pieces.length > 3, kind);
+    for (const piece of pieces) assert.ok(piece.length >= 2, kind);
+  }
+  assert.deepEqual(dashSegments([[1, 1]], 10, 5), []);
+  assert.deepEqual(dashSegments([[0, 0], [5, 0]], 0, 5), [[[0, 0], [5, 0]]]); // no dash length: solid
+});
+
+test("thicker lines get longer dashes and gaps, never shorter than 8 and 6", () => {
+  assert.deepEqual(dashPattern(1), [8, 6]);
+  assert.deepEqual(dashPattern(4), [16, 12]);
 });

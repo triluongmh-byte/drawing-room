@@ -74,6 +74,7 @@ const state = {
   tools: restoreToolSettings(), // tool -> { size, color }
   groupTool: { write: "pencil", paint: "brush", shapes: "shape" }, // the tool each toolbox group picks when tapped
   shapeKind: "rect", // the shape the Shapes tool drags out (shapes.js)
+  shapeDash: false, // whether shapes come out dashed
   flyout: null, // "write" | "paint" | "eraser" while the tool flyout is open
   project: null, // { id, name, created, updated, strokes } of the open project
   projects: null, // the project list, as last fetched
@@ -137,7 +138,7 @@ const saver = createSaver(async () => {
 
 function saveDevice() {
   try {
-    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool, groupTool: state.groupTool, shapeKind: state.shapeKind }));
+    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool, groupTool: state.groupTool, shapeKind: state.shapeKind, shapeDash: state.shapeDash }));
   } catch { /* private mode or full storage: drawing still works */ }
 }
 
@@ -321,6 +322,7 @@ async function startProjects() {
     if (tools.includes(device.groupTool?.[group])) state.groupTool[group] = device.groupTool[group];
   }
   if (SHAPES[device.shapeKind]) state.shapeKind = device.shapeKind;
+  state.shapeDash = device.shapeDash === true;
   let openId = projects.some((p) => p.id === device.project) ? device.project : projects[0]?.id;
   if (legacy && (hasStrokes(legacy) || !projects.length)) {
     const { project } = await postJSON("/api/projects", { name: hasStrokes(legacy) ? "My first drawing" : "Drawing 1", drawing: legacy });
@@ -585,6 +587,7 @@ function startStroke(event) {
     // Dragged out from here: the shape is rebuilt from this corner to the pointer on every move.
     state.current = createStroke({ layer: layer.id, tool: "shape", size: settings.size, opacity: TOOLS.shape.opacity, color: settings.color });
     state.current.shape = state.shapeKind;
+    if (state.shapeDash) state.current.dash = true;
     state.current.shapeDrag = { a: [px, py], b: [px, py] };
     state.dirty = true;
     return;
@@ -884,6 +887,12 @@ function renderFlyout() {
     tools.append(button);
   }
   $("flyout-colors").hidden = !group;
+  $("flyout-dash").hidden = state.flyout !== "shapes";
+  for (const button of $("flyout-dash").querySelectorAll("[data-dash]")) {
+    const on = (button.dataset.dash === "1") === state.shapeDash;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
   const swatches = $("flyout-swatches");
   swatches.innerHTML = "";
   const current = state.tools[state.tool]?.color;
@@ -1569,6 +1578,8 @@ function wire() {
   $("tool-flyout").addEventListener("click", (event) => {
     const shape = event.target.closest("[data-shape]");
     if (shape) { state.shapeKind = shape.dataset.shape; setTool("shape"); save(); return; }
+    const dash = event.target.closest("[data-dash]");
+    if (dash) { state.shapeDash = dash.dataset.dash === "1"; setTool("shape"); save(); return; }
     const tool = event.target.closest("[data-tool]");
     if (tool) { setTool(tool.dataset.tool); save(); return; }
     const swatch = event.target.closest("[data-color]");

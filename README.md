@@ -70,7 +70,7 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   3–4 size and position are ignored, so you can draw anywhere on it.
 - **Toolbox** (left edge): **Write** holds the pencil (P), ink (I) and marker (M); **Paint** holds the colour brush (B),
   Shade (S) and the highlighter (H); **Shapes** (U) drags out a line, rectangle, ellipse, triangle, diamond or arrow
-  (hold Shift for a square, a circle, or a line at 15° steps); then the eraser (E, removes whole strokes), the ruler (L), undo/redo, rotate, fit
+  (hold Shift for a square, a circle, or a line at 15° steps), solid or dashed; then the eraser (E, removes whole strokes), the ruler (L), undo/redo, rotate, fit
   and clear. Tap a group to pick its tool; tap it again for its flyout: the group's tools, six colours plus any colour,
   and the size (`[` / `]` change it too). Each tool keeps its own size, and a colour is shared within its group, so the
   pencil and the ink match while the highlighter stays yellow. The marker is an even, opaque felt-tip; the highlighter
