@@ -102,6 +102,14 @@
           <span id="flyout-tool-name" class="label-muted"></span>
         </div>
         <div id="flyout-tools" class="flex gap-1"></div>
+        <div id="flyout-dash" class="grid grid-cols-2 gap-1 rounded-lg bg-secondary/60 p-1" role="group" aria-label="Line style" hidden>
+          <button class="dash-option" data-dash="0" title="Solid line" aria-pressed="true">
+            <svg width="28" height="8" viewBox="0 0 28 8" aria-hidden="true"><line x1="2" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>Solid
+          </button>
+          <button class="dash-option" data-dash="1" title="Dashed line" aria-pressed="false">
+            <svg width="28" height="8" viewBox="0 0 28 8" aria-hidden="true"><line x1="2" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5 4"/></svg>Dashed
+          </button>
+        </div>
         <div id="flyout-colors" class="flex flex-wrap items-center gap-2">
           <div id="flyout-swatches" class="contents"></div>
           <input id="color" class="color-well" type="color" value="#3b3936" title="Any colour" aria-label="Pick any colour">

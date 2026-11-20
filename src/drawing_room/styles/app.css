@@ -132,6 +132,9 @@
   .tool-btn .more { @apply absolute bottom-0.5 right-0.5 size-0 border-4 border-transparent border-b-current border-r-current opacity-50; }
   .flyout-tool { @apply btn-base hover:bg-accent h-auto w-[4.75rem] flex-col gap-1 rounded-lg px-1 py-2 text-[11px] font-normal text-muted-foreground; }
   .flyout-tool.active { @apply bg-accent text-foreground ring-1 ring-ring; }
+  /* Solid or dashed, for shapes: a shadcn segmented toggle. */
+  .dash-option { @apply btn-base h-8 rounded-md px-2 text-xs font-normal text-muted-foreground hover:text-foreground; }
+  .dash-option.active { @apply bg-background text-foreground shadow-sm ring-1 ring-border; }
   .swatch {
     @apply size-7 rounded-full border border-white/15 outline-none transition-transform hover:scale-110
       focus-visible:ring-[3px] focus-visible:ring-ring/50;

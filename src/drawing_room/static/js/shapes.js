@@ -75,6 +75,39 @@ export function shapePoints(kind, a, b, { constrain = false } = {}) {
   return path([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], true); // rect, and anything unknown
 }
 
+/** Dash and gap lengths for a dashed line of width `size`, in paper pixels: longer dashes for thicker lines. */
+export function dashPattern(size) {
+  return [Math.max(8, size * 4), Math.max(6, size * 3)];
+}
+
+/**
+ * Cut a polyline into dashes: the pieces of it that are "on", walking `dash` pixels on, `gap` off, along its
+ * length (corners included). Each piece is a list of [x, y] with at least two points.
+ */
+export function dashSegments(points, dash, gap) {
+  const pieces = [];
+  if (points.length < 2 || !(dash > 0) || !(gap > 0)) return points.length >= 2 ? [points.map(([x, y]) => [x, y])] : [];
+  let on = true, left = dash, current = [[points[0][0], points[0][1]]];
+  for (let i = 1; i < points.length; i++) {
+    let [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    let length = Math.hypot(x1 - x0, y1 - y0);
+    while (length > left) {
+      const t = left / length;
+      const x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      if (on) { current.push([x, y]); pieces.push(current); } else current = [[x, y]];
+      on = !on;
+      length -= left;
+      x0 = x; y0 = y;
+      left = on ? dash : gap;
+    }
+    left -= length;
+    if (on) current.push([x1, y1]);
+  }
+  if (on && current.length > 1) pieces.push(current);
+  return pieces;
+}
+
 /** Whether a drag is big enough to be a shape rather than a stray tap. */
 export function bigEnough(a, b, min = 3) {
   return Math.abs(b[0] - a[0]) >= min || Math.abs(b[1] - a[1]) >= min;
