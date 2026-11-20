@@ -1,6 +1,6 @@
 """End-to-end check in a real browser: draws with synthetic pen events, scores, asks the coach, saves screenshots.
 
-Needs a running server (port 8430 unless a URL is given) and Google Chrome. Run it against a throwaway data dir:
+Needs a running server and Google Chrome. Run it against a throwaway data dir:
     uv run drawing-room serve --port 8431 --data "$(mktemp -d)" &
     uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots http://127.0.0.1:8431/
 """
@@ -31,7 +31,7 @@ def open_panel(page, name):
 
 OUT = sys.argv[1]
 # The server to test; pass one started with a throwaway --data dir, never the one holding your drawings.
-URL = sys.argv[2] if len(sys.argv) > 2 else "http://127.0.0.1:8430/"
+URL = sys.argv[2]
 
 DRAW = """
 async ({points, type, id}) => {

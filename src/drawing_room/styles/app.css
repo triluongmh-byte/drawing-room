@@ -204,6 +204,14 @@
 .hint { transition: opacity 0.6s; }
 .hint.faded:not(.flash) { opacity: 0; }
 
+/* Portrait tablets: the chat becomes a sheet above the layers strip, so the paper keeps the whole width. */
+@media (max-width: 900px) and (orientation: portrait) {
+  :root { --chat-w: 0px; }
+  #panel-chat { top: auto; left: 4.5rem; right: 0.75rem; width: auto; bottom: 10.5rem; height: 30%; }
+  .paper-wrap:has(#panel-chat:not([hidden])) .bottom-zone { right: 0.75rem; }
+  .paper-wrap:has(#panel-chat:not([hidden])) #panel-coach { right: 0.75rem; }
+}
+
 /* Narrow screens: the chat and the score sit at the bottom over the strip rather than beside it. */
 @media (max-width: 760px) {
   :root { --chat-w: 0px; }

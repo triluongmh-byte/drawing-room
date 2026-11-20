@@ -86,11 +86,14 @@ with sync_playwright() as p:
     mac.reload(); ready(mac)
     check(mac.evaluate("() => window.drawingRoom.state.paper") == "a4-portrait", "the paper size is kept with the project")
 
-    # New project, named straight away.
+    # New project, named straight away. It starts on blank paper even when this one draws from a reference.
+    mac.eval_on_selector("#reference", "el => { el.value = 'line'; el.dispatchEvent(new Event('change')); }")
+    check(mac.evaluate("() => window.drawingRoom.state.reference?.id") == "line", "this project draws from the line")
     mac.click("#project-button")
     mac.click("#project-new")
     mac.wait_for_function("() => document.activeElement && document.activeElement.id === 'project-rename'")
     check(mac.evaluate(COUNT) == 0, "a new project starts empty")
+    check(mac.evaluate("() => window.drawingRoom.state.reference") is None, "a new project starts on blank paper")
     mac.fill("#project-rename", "Apple study")
     mac.press("#project-rename", "Enter")
     mac.wait_for_function("() => window.drawingRoom.state.project?.name === 'Apple study'")

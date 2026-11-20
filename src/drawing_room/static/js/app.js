@@ -222,7 +222,8 @@ async function openProject(id) {
 async function newProject({ name, drawing = null } = {}) {
   await saver.flush().catch(() => {});
   const projects = state.projects ?? await refreshProjects();
-  const fresh = drawing ?? { level: state.level, reference: state.reference ? { ...state.reference, meta: undefined } : null };
+  // A new project keeps the level but starts on blank paper (warm-up drills pick their first drill).
+  const fresh = drawing ?? { level: state.level, reference: null };
   const { project } = await postJSON("/api/projects", { name: name ?? nextProjectName(projects), drawing: fresh });
   await refreshProjects();
   await openProject(project.id);
@@ -854,10 +855,12 @@ function toolboxWidth() {
   return box ? box.offsetLeft + box.offsetWidth + 8 : 64;
 }
 
+/** Room taken along the bottom: the layers strip, and the chat when it is a sheet there. */
 function layersHeight() {
-  const panel = $("panel-layers");
-  if (!panel || panel.hidden) return 0;
-  return $("paper-wrap").getBoundingClientRect().bottom - panel.getBoundingClientRect().top + 4;
+  const bottom = $("paper-wrap").getBoundingClientRect().bottom;
+  const tops = [$("panel-layers"), CHAT_SHEET.matches ? $("panel-chat") : null]
+    .filter((panel) => panel && !panel.hidden).map((panel) => panel.getBoundingClientRect().top);
+  return tops.length ? bottom - Math.min(...tops) + 4 : 0;
 }
 
 function setSize(value) {
@@ -1097,6 +1100,7 @@ function applyReference() {
   $("reference-view").hidden = !state.reference;
   $("reference-empty").hidden = !!state.reference;
   $("opacity-row").hidden = !state.reference;
+  $("guide-panel").hidden = !level.guide || !state.reference; // no steps to follow on blank paper
   const guideOnly = level.underlay === "guide" && state.reference?.kind === "builtin" && state.reference.meta?.drill;
   state.underlay = state.reference ? loadImage(referenceUrl(guideOnly)) : null;
   state.marks = [];
@@ -1326,9 +1330,12 @@ const CLAUDE_STYLE = {
   line: { color: "#26282b", size: 2.6 }, // finished lines
 };
 
+const CHAT_SHEET = window.matchMedia("(max-width: 900px) and (orientation: portrait)");
+
+/** Room the chat takes on the right; none when it is a sheet along the bottom (portrait tablets). */
 function chatWidth() {
   const chat = $("panel-chat");
-  return chat && !chat.hidden ? chat.offsetWidth + 16 : 0;
+  return chat && !chat.hidden && !CHAT_SHEET.matches ? chat.offsetWidth + 16 : 0;
 }
 
 function bubble(role, text, extra = "") {
