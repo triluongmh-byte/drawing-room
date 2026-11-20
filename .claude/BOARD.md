@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **README rewrite** (docs/readme): new light-UI screenshots, a tour, Claude-as-teacher section, tools and keyboard tables.
 - **Claude explains on the drawing + layer thumbnails** (feat/claude-labels): real text labels and numbered steps on a "Notes" layer; layer cards zoom onto their own strokes.
 - **Notes for Claude** (feat/chat-notes): Note tool (N) pins numbered questions on the paper; they go with the next chat message, with their spot, and show as pins in what Claude sees.
 - **Light UI, edgeless paper, grid toggle** (feat/light-ui): shadcn light theme; white paper edge to edge, draw anywhere; squared grid in paper space, toggled with the grid button or G.
