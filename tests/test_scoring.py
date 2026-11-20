@@ -149,3 +149,8 @@ def test_where_names_the_part_of_the_paper():
     assert where([0, 0, 100, 100]) == "in the top left"
     assert where([450, 300, 550, 400]) == "in the middle"
     assert where([900, 300, 1000, 400]) == "on the right"
+
+
+def test_paint_bucket_fills_never_count():
+    assert scoring.is_scored({"tool": "fill", "scored": True}) is False
+    assert scoring.is_scored({"tool": "pencil", "scored": True}) is True

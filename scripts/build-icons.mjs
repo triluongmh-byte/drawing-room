@@ -16,6 +16,7 @@ const NAMES = [
   "lock", "lock-open", "star", "chevron-left", "chevron-right", "x", "upload", "send", "check",
   "dumbbell", "route", "scan-line", "graduation-cap", "file", "eraser",
   "paperclip", "grid-3x3", "map-pin-plus", "shapes", "slash", "square", "circle", "triangle", "diamond", "arrow-up-right",
+  "paint-bucket", "pipette", "download", "folder-open", "image-down",
 ];
 
 const icons = {};

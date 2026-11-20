@@ -42,9 +42,12 @@ test("a picked colour is shared within the tool's group only, the eraser keeps n
   assert.equal(shareColor(settings, "#ffffff", "eraser").pencil.color, "#2f6fd0"); // no group: ignored
 });
 
-test("tools sit in three groups, each with six colours to pick from; the eraser in none", () => {
+test("tools sit in three groups, each with six colours to pick from; the eraser and picker in none", () => {
   assert.deepEqual(GROUPS.write.tools, ["pencil", "ink", "marker"]);
-  assert.deepEqual(GROUPS.paint.tools, ["brush", "shade", "highlighter"]);
+  assert.deepEqual(GROUPS.paint.tools, ["brush", "shade", "highlighter", "fill"]);
+  assert.equal(groupOf("fill"), "paint");
+  assert.equal(groupOf("picker"), null);
+  assert.ok(!COLORED.includes("picker") && COLORED.includes("fill"));
   assert.deepEqual(GROUPS.shapes.tools, ["shape"]);
   assert.equal(groupOf("shape"), "shapes");
   assert.equal(TOOLS.shape.thinning, 0); // an even line, whatever the pressure
@@ -55,7 +58,7 @@ test("tools sit in three groups, each with six colours to pick from; the eraser 
   assert.equal(groupOf("marker"), "write");
   assert.equal(groupOf("shade"), "paint");
   assert.equal(groupOf("eraser"), null);
-  assert.deepEqual([...COLORED].sort(), Object.keys(TOOLS).filter((t) => t !== "eraser").sort());
+  assert.deepEqual([...COLORED].sort(), Object.keys(TOOLS).filter((t) => t !== "eraser" && t !== "picker").sort());
 });
 
 test("the marker is even-width and opaque, the highlighter wide, see-through and multiplied", () => {
@@ -64,4 +67,12 @@ test("the marker is even-width and opaque, the highlighter wide, see-through and
   assert.equal(TOOLS.highlighter.blend, "multiply");
   assert.ok(TOOLS.highlighter.opacity < 0.5);
   assert.ok(TOOLS.highlighter.size > TOOLS.marker.size);
+});
+
+test("the paint bucket's size is the gap it closes, and it keeps its own colour", () => {
+  const settings = restoreToolSettings({ fill: { size: 99, color: "#123ABC" }, picker: { size: 5 } });
+  assert.equal(settings.fill.size, TOOLS.fill.max);
+  assert.equal(settings.fill.color, "#123abc");
+  assert.equal(settings.picker.size, 1);
+  assert.equal(settings.picker.color, undefined);
 });

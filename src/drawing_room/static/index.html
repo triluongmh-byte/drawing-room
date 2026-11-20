@@ -84,7 +84,7 @@
         <button class="tool-btn" data-group="write" title="Write: pencil, ink and marker (P, I, M)" aria-label="Write tools" aria-haspopup="true" aria-expanded="false">
           <i data-icon="pencil" data-size="20"></i><span class="dot" aria-hidden="true"></span>
         </button>
-        <button class="tool-btn" data-group="paint" title="Paint: colour brush, shade and highlighter (B, S, H)" aria-label="Paint tools" aria-haspopup="true" aria-expanded="false">
+        <button class="tool-btn" data-group="paint" title="Paint: colour brush, shade, highlighter and paint bucket (B, S, H, F)" aria-label="Paint tools" aria-haspopup="true" aria-expanded="false">
           <i data-icon="paintbrush" data-size="20"></i><span class="dot" aria-hidden="true"></span>
         </button>
         <button class="tool-btn" data-group="shapes" title="Shapes: line, rectangle, ellipse, triangle, diamond and arrow (U)" aria-label="Shapes" aria-haspopup="true" aria-expanded="false">
@@ -92,6 +92,9 @@
         </button>
         <button class="tool-btn" data-tool="eraser" title="Eraser (E): removes whole strokes on the active layer. Tap again for its size." aria-label="Eraser">
           <i data-icon="eraser" data-size="20"></i>
+        </button>
+        <button class="tool-btn" data-tool="picker" title="Colour picker (K): tap the drawing or the reference picture to take its colour, then you are back on your tool. ⌥-click does the same with any colour tool" aria-label="Colour picker">
+          <i data-icon="pipette" data-size="20"></i>
         </button>
         <button id="ruler-toggle" class="tool-btn" title="Ruler (L): start a stroke against it to draw straight; drag its ends to turn it, its middle to move it" aria-label="Ruler" aria-pressed="false">
           <i data-icon="ruler" data-size="20"></i>
@@ -256,6 +259,17 @@
     <label class="flex items-center gap-3 text-xs text-muted-foreground" title="The sheet's shape. The reference and scoring frame always sits in its middle.">Paper
       <select id="paper-size" class="input flex-1" aria-label="Paper size"></select>
     </label>
+    <div class="flex items-center gap-2 text-xs text-muted-foreground" title="Projects save themselves on this computer. A project file is a copy you can keep, move or open again.">
+      <span class="w-12">File</span>
+      <button id="file-save" type="button" class="btn btn-outline h-8 flex-1 px-2 text-xs" title="Download this project as a .drawing.json file (⇧⌘S)"><i data-icon="download" data-size="14"></i>Save file</button>
+      <button id="file-open" type="button" class="btn btn-outline h-8 flex-1 px-2 text-xs" title="Open a .drawing.json file as a new project"><i data-icon="folder-open" data-size="14"></i>Open file…</button>
+      <input id="file-input" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-muted-foreground" title="Save the drawing as a picture: visible layers on white, without the reference or the grid">
+      <span class="w-12">Export</span>
+      <button id="export-png" type="button" class="btn btn-outline h-8 flex-1 px-2 text-xs"><i data-icon="image-down" data-size="14"></i>PNG</button>
+      <button id="export-jpg" type="button" class="btn btn-outline h-8 flex-1 px-2 text-xs"><i data-icon="image-down" data-size="14"></i>JPG</button>
+    </div>
     <button id="project-new" class="btn btn-default w-full"><i data-icon="plus" data-size="16"></i>New project</button>
     <ul class="project-list flex flex-col gap-0.5 overflow-y-auto" id="project-list"></ul>
   </div>
