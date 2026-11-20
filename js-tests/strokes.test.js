@@ -52,3 +52,12 @@ test("stroke stats count short scratchy strokes", () => {
   assert.equal(stats.meanLength, 40);
   assert.equal(stats.shortShare, 2 / 3);
 });
+
+test("highlighter strokes are sent as tone (shade) so scoring and the coach skip them; marker strokes are not", () => {
+  const highlight = createStroke({ layer: "color", tool: "highlighter" });
+  addPoint(highlight, 1, 1);
+  assert.equal(serializeStroke(highlight).shade, true);
+  const marker = createStroke({ layer: "line", tool: "marker" });
+  addPoint(marker, 1, 1);
+  assert.equal("shade" in serializeStroke(marker), false);
+});

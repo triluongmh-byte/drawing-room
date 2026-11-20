@@ -1,0 +1,213 @@
+/* Source of static/styles.css: Tailwind v4 with shadcn/ui's design tokens (dark zinc theme).
+   Build with `npm run build:css`; the built file is committed so the app runs without Node. */
+
+@import "tailwindcss" source(none);
+@source "../static/index.html";
+@source "../static/js";
+
+/* shadcn/ui tokens, dark zinc. The chrome is dark in every theme so the white paper stands out. */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.885);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.92 0.004 286.32);
+  --primary-foreground: oklch(0.21 0.006 285.885);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.552 0.016 285.938);
+  /* Not in shadcn: a blue for "this is what you are drawing with / on", and the score's gold. */
+  --brand: oklch(0.623 0.188 259.815);
+  --brand-foreground: oklch(0.985 0 0);
+  --gold: oklch(0.828 0.189 84.429);
+  --chat-w: 340px;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-gold: var(--gold);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  [hidden] { display: none !important; }
+  html, body {
+    @apply h-full bg-background text-foreground font-sans antialiased;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button { cursor: pointer; touch-action: manipulation; }
+  button:disabled { cursor: default; }
+  input[type="range"] { accent-color: var(--primary); }
+}
+
+/* Primitives the components below build on (Tailwind v4 only @applies utilities). */
+@utility btn-base {
+  @apply inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium
+    transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50
+    disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0;
+}
+@utility surface {
+  @apply rounded-xl border bg-popover/85 text-popover-foreground shadow-xl shadow-black/30 backdrop-blur-xl;
+}
+
+@layer components {
+  /* ---- shadcn Button */
+  .btn { @apply btn-base; }
+  .btn-default { @apply h-9 px-4 bg-primary text-primary-foreground shadow-xs hover:bg-primary/90; }
+  .btn-secondary { @apply h-9 px-3 bg-secondary text-secondary-foreground hover:bg-secondary/80; }
+  .btn-outline { @apply h-9 px-3 border bg-input/30 hover:bg-input/50; }
+  .btn-ghost { @apply h-9 px-3 hover:bg-accent hover:text-accent-foreground; }
+  .btn-destructive-ghost { @apply hover:bg-destructive/15 hover:text-destructive; }
+  .btn-icon { @apply size-9 p-0; }
+  .btn-icon-sm { @apply size-7 p-0 rounded-sm; }
+  /* A toggle that is on: what you are drawing with, which panel is open. */
+  .btn.active, .btn[aria-pressed="true"].toggle { @apply bg-primary text-primary-foreground hover:bg-primary/90; }
+
+  .popover { @apply surface absolute z-30 p-3; }
+  .panel-title { @apply text-sm font-semibold leading-none tracking-tight; }
+  .label-muted { @apply text-xs font-medium text-muted-foreground; }
+  .sep-x { @apply h-px w-full bg-border; }
+  .sep-y { @apply h-6 w-px bg-border; }
+
+  /* Panel toggles in the top bar: shadcn's Toggle "on" look, quieter than a pressed tool. */
+  .btn[data-panel-toggle].active { @apply bg-accent text-accent-foreground ring-1 ring-ring/60 hover:bg-accent/80; }
+
+  /* ---- shadcn Input / Select / Textarea */
+  .input {
+    @apply h-9 w-full min-w-0 rounded-md border border-input bg-input/30 px-3 py-1 text-sm shadow-xs outline-none
+      transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring
+      focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50;
+  }
+  select.input { @apply pr-8 appearance-none bg-no-repeat; background-position: right 0.5rem center; background-size: 1rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+  select.input option { @apply bg-popover text-popover-foreground; }
+  textarea.input { @apply h-auto py-2 resize-none; }
+
+  /* ---- shadcn Badge */
+  .badge { @apply inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums; }
+
+  /* ---- Left toolbox and its flyouts */
+  .tool-btn { @apply btn-base relative size-10 rounded-lg p-0 hover:bg-accent; }
+  .tool-btn.active { @apply bg-primary text-primary-foreground hover:bg-primary/90; }
+  .tool-btn .dot { @apply absolute bottom-1 right-1 size-2.5 rounded-full ring-2 ring-popover; }
+  .tool-btn .more { @apply absolute bottom-0.5 right-0.5 size-0 border-4 border-transparent border-b-current border-r-current opacity-50; }
+  .flyout-tool { @apply btn-base hover:bg-accent h-auto w-[4.75rem] flex-col gap-1 rounded-lg px-1 py-2 text-[11px] font-normal text-muted-foreground; }
+  .flyout-tool.active { @apply bg-accent text-foreground ring-1 ring-ring; }
+  .swatch {
+    @apply size-7 rounded-full border border-white/15 outline-none transition-transform hover:scale-110
+      focus-visible:ring-[3px] focus-visible:ring-ring/50;
+  }
+  .swatch.active { @apply ring-2 ring-primary ring-offset-2 ring-offset-popover; }
+  .color-well {
+    @apply size-7 cursor-pointer appearance-none overflow-hidden rounded-full border border-white/25 bg-transparent p-0;
+  }
+  .color-well::-webkit-color-swatch-wrapper { padding: 0; }
+  .color-well::-webkit-color-swatch { border: none; border-radius: 9999px; }
+  .color-well::-moz-color-swatch { border: none; border-radius: 9999px; }
+
+  /* ---- Practice menu: one row per level */
+  .level-item { @apply flex w-full items-start gap-3 rounded-lg p-2.5 text-left transition-colors hover:bg-accent; }
+  .level-item.active { @apply bg-accent ring-1 ring-ring; }
+  .level-item .num { @apply mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground; }
+  .level-item.active .num { @apply bg-primary text-primary-foreground; }
+
+  /* ---- Layers strip: one card per layer, bottom of the stack on the left */
+  .layers li {
+    @apply flex w-24 shrink-0 cursor-pointer flex-col gap-1 rounded-lg border border-transparent p-1 transition-colors hover:bg-accent/60;
+  }
+  .layers li.active { @apply border-brand bg-brand/15; }
+  .layers li.reference-row { @apply cursor-default border-dashed border-border hover:bg-transparent; }
+  .layers .thumb { @apply block h-[54px] w-full rounded-md bg-white object-contain; }
+  .layers li.reference-row .thumb { @apply bg-white/5; }
+  .layers li.hidden-layer .thumb { @apply opacity-35; }
+  .layers .name { @apply min-w-0 truncate text-xs; }
+  .layers input.name { @apply h-6 rounded-sm border border-ring bg-black/30 px-1 outline-none; }
+  .layers .row { @apply flex items-center gap-0.5; }
+  .layers .row .grow-1 { @apply min-w-0 flex-1; }
+  .layers button { @apply btn-base size-6 rounded-sm p-0 text-muted-foreground hover:bg-accent; }
+  .layers button:hover:not(:disabled) { @apply text-foreground; }
+  .layers button.lock[aria-pressed="true"] { @apply text-foreground; }
+  .layers button.scored[aria-pressed="true"] { @apply text-gold; }
+  .layers button.scored[aria-pressed="true"] svg { fill: currentColor; }
+  .layers .count { @apply ml-auto text-[10px] tabular-nums text-muted-foreground; }
+
+  /* ---- Projects */
+  .project-list li { @apply flex cursor-pointer flex-col rounded-md px-2.5 py-2 hover:bg-accent; }
+  .project-list li.active { @apply cursor-default bg-accent; }
+  .project-list .name { @apply truncate text-sm font-medium; }
+  .project-list .info { @apply text-xs text-muted-foreground; }
+
+  /* ---- Guide steps */
+  .steps li.done { @apply text-muted-foreground line-through; }
+  .steps li.current { @apply font-semibold text-brand; }
+
+  /* ---- Chat with Claude */
+  .msg { @apply max-w-[88%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm leading-relaxed [overflow-wrap:anywhere]; }
+  .msg.user { @apply self-end rounded-br-sm bg-primary text-primary-foreground; }
+  .msg.assistant { @apply self-start rounded-bl-sm bg-secondary text-secondary-foreground; }
+  .msg.thinking { @apply italic text-muted-foreground; }
+  .chat-empty { @apply m-auto px-2 text-center text-sm leading-relaxed text-muted-foreground; }
+
+  /* ---- Toast-style hint on the paper */
+  .hint.flash { @apply bg-brand text-brand-foreground; }
+
+  .icon { display: block; }
+}
+
+/* With the chat docked on the right, the score card and the layers strip make room for it. */
+.paper-wrap:has(#panel-chat:not([hidden])) #panel-coach { right: calc(var(--chat-w) + 1.5rem); }
+.paper-wrap:has(#panel-chat:not([hidden])) .bottom-zone { right: calc(var(--chat-w) + 1.5rem); }
+
+/* Tablets in portrait: a narrower chat so the paper keeps most of the width. */
+@media (max-width: 1100px) { :root { --chat-w: 290px; } }
+
+/* The start-up hint fades once read; flashes come back for a moment. */
+.hint { transition: opacity 0.6s; }
+.hint.faded:not(.flash) { opacity: 0; }
+
+/* Narrow screens: the chat and the score sit at the bottom over the strip rather than beside it. */
+@media (max-width: 760px) {
+  :root { --chat-w: 0px; }
+  #panel-chat { left: 4.5rem; width: auto; top: auto; height: 45%; }
+  #panel-coach { left: 4.5rem; width: auto; }
+  .hint { display: none; }
+}

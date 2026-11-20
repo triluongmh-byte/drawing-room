@@ -74,8 +74,8 @@ export function serializeStroke(stroke) {
   const round = (v, digits) => Math.round(v * 10 ** digits) / 10 ** digits;
   return {
     id: stroke.id, layer: stroke.layer, tool: stroke.tool, color: stroke.color, size: stroke.size,
-    // Shading is tone, not line: scoring and the coach leave it out.
-    ...(stroke.shade ? { shade: true } : {}),
+    // Shading and highlighting are tone, not line: scoring and the coach leave them out.
+    ...(stroke.shade || stroke.tool === "highlighter" ? { shade: true } : {}),
     points: stroke.points.map(([x, y, p, t, tx, ty]) => [round(x, 1), round(y, 1), round(p, 3), Math.round(t), Math.round(tx), Math.round(ty)]),
   };
 }

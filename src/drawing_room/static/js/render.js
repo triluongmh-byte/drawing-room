@@ -103,8 +103,11 @@ export function strokeOpacity(stroke) {
 
 export function paintStroke(ctx, stroke, path) {
   ctx.globalAlpha = strokeOpacity(stroke);
+  const blend = TOOLS[stroke.tool]?.blend;
+  if (blend) ctx.globalCompositeOperation = blend;
   const kind = grainKind(stroke);
   ctx.fillStyle = (kind && grainPattern(ctx, kind, stroke.color)) || stroke.color;
   ctx.fill(path);
   ctx.globalAlpha = 1;
+  if (blend) ctx.globalCompositeOperation = "source-over";
 }

@@ -145,7 +145,7 @@ with sync_playwright() as p:
     mac.wait_for_function("() => window.drawingRoom.state.project && window.drawingRoom.state.project.name !== 'My first drawing'")
     check(mac.evaluate(COUNT) == 0, f"never zero projects: {mac.evaluate(NAME)}")
 
-    top = mac.eval_on_selector_all(".toolbar > *:not([hidden])", "els => { const mids = els.map(e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }); return Math.max(...mids) - Math.min(...mids); }")
+    top = mac.eval_on_selector_all("header > *:not([hidden]):not(select)", "els => { const mids = els.map(e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }); return Math.max(...mids) - Math.min(...mids); }")
     check(top < 8, "the toolbar is still one row at 1180 px")
     check(not errors, f"no console errors: {errors}")
     browser.close()

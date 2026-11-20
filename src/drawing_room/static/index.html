@@ -1,24 +1,34 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#242321">
+  <meta name="theme-color" content="#09090b">
   <title>Drawing Room</title>
   <link rel="icon" href="data:,">
+  <!-- Built from ../styles/app.css with `npm run build:css` (Tailwind + shadcn/ui tokens). -->
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body>
-  <!-- One slim bar on top; the paper takes the rest of the screen and the panels float over it. -->
-  <header class="toolbar" role="toolbar" aria-label="Drawing tools">
-    <div class="project">
-      <button id="project-button" class="project-button" aria-haspopup="true" aria-expanded="false" title="Projects">
-        <span class="project-icon" aria-hidden="true">🗂</span><span id="project-name" class="project-name">…</span><span class="caret" aria-hidden="true">▾</span>
-      </button>
-      <span id="project-status" class="project-status" aria-live="polite"></span>
-    </div>
-    <select id="level" class="level" aria-label="Level" title="Level: how much help you get">
+<body class="flex flex-col">
+  <!-- One slim bar on top: the project, the practice level, and the panels. The tools live on the left. -->
+  <header class="relative z-40 flex h-12 shrink-0 items-center gap-1.5 border-b bg-background px-2 pt-[env(safe-area-inset-top)]" role="toolbar" aria-label="Project and panels">
+    <button id="project-button" class="btn btn-ghost max-w-56 px-2 font-semibold" aria-haspopup="true" aria-expanded="false" title="Projects">
+      <i data-icon="folder" class="text-muted-foreground"></i>
+      <span id="project-name" class="truncate">…</span>
+      <i data-icon="chevron-down" data-size="14" class="text-muted-foreground"></i>
+    </button>
+    <span id="project-status" class="text-xs text-destructive" aria-live="polite"></span>
+    <span class="sep-y" aria-hidden="true"></span>
+
+    <button id="mode-button" class="btn btn-ghost max-w-[min(26rem,50vw)] px-2" aria-haspopup="true" aria-expanded="false" title="Practice level and reference">
+      <span id="mode-num" class="badge bg-secondary text-secondary-foreground">1</span>
+      <span id="mode-label" class="truncate">Trace, guided</span>
+      <span id="mode-ref" class="hidden truncate text-muted-foreground sm:inline">· Blank paper</span>
+      <i data-icon="chevron-down" data-size="14" class="text-muted-foreground"></i>
+    </button>
+    <!-- The level's value lives here; the practice menu sets it. -->
+    <select id="level" class="hidden" aria-label="Level" tabindex="-1">
       <option value="0">0 · Warm-up drills</option>
       <option value="1" selected>1 · Trace, guided</option>
       <option value="2">2 · Trace</option>
@@ -26,155 +36,199 @@
       <option value="4">4 · Test: review at end</option>
     </select>
 
-    <div class="spacer"></div>
+    <label id="ruler-angle-wrap" class="ml-1 flex items-center gap-1.5 text-xs text-muted-foreground" hidden title="Ruler angle. Dragging an end snaps to 15° steps; hold ⌥ for a free angle.">
+      <i data-icon="ruler" data-size="14"></i>
+      <input id="ruler-angle" class="input h-8 w-20 px-2" type="number" min="0" max="179.9" step="0.5" inputmode="decimal" aria-label="Ruler angle in degrees">°
+    </label>
 
-    <div class="segmented tools" role="group" aria-label="Tools">
-      <button data-tool="pencil" class="tool" title="Pencil (P): press lightly for a thin pale line, harder for a thick dark one; tilt an Apple Pencil or Wacom pen on its side to shade" aria-label="Pencil">✏️</button>
-      <button data-tool="shade" class="tool" title="Shade (S): the pencil laid flat, a broad light band for shading; go over it again to darken" aria-label="Shade">🖍</button>
-      <button data-tool="ink" class="tool" title="Ink (I): final lines" aria-label="Ink">🖋</button>
-      <button data-tool="brush" class="tool" title="Color brush (B)" aria-label="Color brush">🖌</button>
-      <button data-tool="eraser" class="tool" title="Eraser (E): removes whole strokes on the active layer" aria-label="Eraser">⌫</button>
-    </div>
+    <div class="flex-1"></div>
 
-    <!-- Size and colour sit right next to the tools they belong to; each tool keeps its own. -->
-    <div class="group brush-settings">
-      <label class="size" title="Size of this tool ([ and ] change it)">
-        <input id="size" type="range" min="1" max="12" step="0.5" value="3" aria-label="Tool size">
-        <span id="size-value" class="size-value">3</span>
-      </label>
-      <input id="color" type="color" value="#3b3936" title="Colour of this tool" aria-label="Tool colour">
-    </div>
-
-    <div class="group">
-      <button id="ruler-toggle" class="tool" title="Ruler (L): start a stroke against it to draw straight; drag its ends to turn it, its middle to move it" aria-label="Ruler" aria-pressed="false">📏</button>
-      <label class="ruler-angle" id="ruler-angle-wrap" hidden title="Ruler angle. Dragging an end snaps to 15° steps; hold ⌥ for a free angle.">
-        <input id="ruler-angle" type="number" min="0" max="179.9" step="0.5" inputmode="decimal" aria-label="Ruler angle in degrees">°
-      </label>
-    </div>
-
-    <span class="divider" aria-hidden="true"></span>
-
-    <div class="group panel-toggles">
-      <button data-panel-toggle="reference" title="Reference: the picture you draw from, and the next step" aria-label="Reference" aria-expanded="false">🖼</button>
-      <button data-panel-toggle="layers" title="Layers" aria-label="Layers" aria-expanded="false">▤</button>
-      <button data-panel-toggle="coach" title="Score" aria-label="Score" aria-expanded="false">🎯<span id="score-badge" class="badge" hidden></span></button>
-      <button data-panel-toggle="chat" title="Claude: ask it to draw for you, or for advice" aria-label="Claude chat" aria-expanded="false">💬</button>
+    <div class="flex items-center gap-1">
+      <button data-panel-toggle="reference" class="btn btn-ghost px-2.5" title="Reference: the picture you draw from, and the next step" aria-label="Reference" aria-expanded="false">
+        <i data-icon="image"></i><span class="hidden lg:inline">Reference</span>
+      </button>
+      <button data-panel-toggle="layers" class="btn btn-ghost px-2.5" title="Layers" aria-label="Layers" aria-expanded="false">
+        <i data-icon="layers"></i><span class="hidden lg:inline">Layers</span>
+      </button>
+      <button data-panel-toggle="coach" class="btn btn-ghost relative px-2.5" title="Score" aria-label="Score" aria-expanded="false">
+        <i data-icon="target"></i><span class="hidden lg:inline">Score</span>
+        <span id="score-badge" class="badge absolute -top-1 -right-1 bg-brand text-brand-foreground" hidden></span>
+      </button>
+      <button data-panel-toggle="chat" class="btn btn-ghost px-2.5" title="Claude: ask it to draw for you, or for advice" aria-label="Claude chat" aria-expanded="false">
+        <i data-icon="message-circle"></i><span class="hidden lg:inline">Claude</span>
+      </button>
     </div>
   </header>
 
-  <main class="room">
-    <section class="paper-wrap" id="paper-wrap">
-      <canvas id="paper" aria-label="Drawing paper"></canvas>
-      <div class="hint" id="paper-hint">Pen or mouse draws · two fingers / space-drag pan · pinch / wheel zoom</div>
+  <main class="flex min-h-0 flex-1">
+    <section class="paper-wrap relative min-w-0 flex-1 touch-none overflow-hidden bg-background" id="paper-wrap">
+      <canvas id="paper" class="absolute inset-0 block size-full touch-none" aria-label="Drawing paper"></canvas>
+      <div class="hint pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/55 px-3 py-1 text-xs text-muted-foreground backdrop-blur" id="paper-hint">Pen or mouse draws · two fingers or space-drag pans · pinch or wheel zooms</div>
 
-      <!-- Left rail: undo/redo and the view, always at hand beside the paper. -->
-      <nav class="rail" aria-label="Size, undo and view">
-        <button id="undo" title="Undo (⌘Z)" aria-label="Undo">↶</button>
-        <button id="redo" title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
-        <span class="rail-divider" aria-hidden="true"></span>
-        <button id="rotate-left" title="Rotate paper left (⇧R)" aria-label="Rotate paper left">⟲</button>
-        <button id="rotate-right" title="Rotate paper right (R)" aria-label="Rotate paper right">⟳</button>
-        <button id="fit" title="Fit paper (0)" aria-label="Fit paper">⤢</button>
-        <span class="rail-divider" aria-hidden="true"></span>
-        <button id="clear" class="danger" title="Clear every stroke on every layer (undo brings them back)" aria-label="Clear all">🧹</button>
+      <!-- The toolbox on the left: Write and Paint open a flyout with their tools, colours and size. -->
+      <nav id="toolbox" class="surface absolute top-1/2 left-3 z-20 flex -translate-y-1/2 flex-col items-center gap-1 p-1.5" aria-label="Tools">
+        <button class="tool-btn" data-group="write" title="Write: pencil, ink and marker (P, I, M)" aria-label="Write tools" aria-haspopup="true" aria-expanded="false">
+          <i data-icon="pencil" data-size="20"></i><span class="dot" aria-hidden="true"></span>
+        </button>
+        <button class="tool-btn" data-group="paint" title="Paint: colour brush, shade and highlighter (B, S, H)" aria-label="Paint tools" aria-haspopup="true" aria-expanded="false">
+          <i data-icon="paintbrush" data-size="20"></i><span class="dot" aria-hidden="true"></span>
+        </button>
+        <button class="tool-btn" data-tool="eraser" title="Eraser (E): removes whole strokes on the active layer. Tap again for its size." aria-label="Eraser">
+          <i data-icon="eraser" data-size="20"></i>
+        </button>
+        <button id="ruler-toggle" class="tool-btn" title="Ruler (L): start a stroke against it to draw straight; drag its ends to turn it, its middle to move it" aria-label="Ruler" aria-pressed="false">
+          <i data-icon="ruler" data-size="20"></i>
+        </button>
+        <span class="sep-x my-1 w-6" aria-hidden="true"></span>
+        <button id="undo" class="tool-btn" title="Undo (⌘Z)" aria-label="Undo"><i data-icon="undo-2" data-size="20"></i></button>
+        <button id="redo" class="tool-btn" title="Redo (⇧⌘Z)" aria-label="Redo"><i data-icon="redo-2" data-size="20"></i></button>
+        <span class="sep-x my-1 w-6" aria-hidden="true"></span>
+        <button id="rotate-left" class="tool-btn" title="Rotate paper left (⇧R)" aria-label="Rotate paper left"><i data-icon="rotate-ccw" data-size="20"></i></button>
+        <button id="rotate-right" class="tool-btn" title="Rotate paper right (R)" aria-label="Rotate paper right"><i data-icon="rotate-cw" data-size="20"></i></button>
+        <button id="fit" class="tool-btn" title="Fit paper (0)" aria-label="Fit paper"><i data-icon="scan" data-size="20"></i></button>
+        <span class="sep-x my-1 w-6" aria-hidden="true"></span>
+        <button id="clear" class="tool-btn hover:!bg-destructive/15 hover:text-destructive" title="Clear every stroke on every layer (undo brings them back)" aria-label="Clear all">
+          <i data-icon="brush-cleaning" data-size="20"></i>
+        </button>
       </nav>
 
-      <aside class="float-panel reference-card" id="panel-reference" aria-label="Reference" hidden>
-        <div class="panel-head">
-          <h2>Reference</h2>
-          <div class="reference-pick">
-            <select id="reference" aria-label="Reference"></select>
-            <label class="button upload" title="Upload your own reference image" aria-label="Upload a reference">⤒
-              <input id="upload" type="file" accept="image/*" hidden>
-            </label>
-            <button class="close" data-panel-close="reference" title="Hide the reference" aria-label="Hide the reference">✕</button>
-          </div>
+      <!-- The flyout beside the toolbox: the group's tools, its colours, and the size. -->
+      <div id="tool-flyout" class="popover left-[4.5rem] flex w-[17.5rem] flex-col gap-3" role="dialog" aria-label="Tool settings" hidden>
+        <div class="flex items-center justify-between">
+          <h2 id="flyout-title" class="panel-title">Write</h2>
+          <span id="flyout-tool-name" class="label-muted"></span>
         </div>
-        <div class="reference-view" id="reference-view">
-          <img id="reference-image" alt="Reference">
-          <div class="reference-mark" id="reference-mark" hidden></div>
+        <div id="flyout-tools" class="flex gap-1"></div>
+        <div id="flyout-colors" class="flex flex-wrap items-center gap-2">
+          <div id="flyout-swatches" class="contents"></div>
+          <input id="color" class="color-well" type="color" value="#3b3936" title="Any colour" aria-label="Pick any colour">
         </div>
-        <label class="slider-row">Underlay
-          <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.35">
+        <label class="flex items-center gap-3 text-xs text-muted-foreground" title="Size of this tool ([ and ] change it)">
+          Size
+          <input id="size" class="min-w-0 flex-1" type="range" min="1" max="12" step="0.5" value="3" aria-label="Tool size">
+          <span id="size-value" class="w-8 text-right tabular-nums text-foreground">3</span>
         </label>
-        <section class="guide" id="guide-panel" hidden>
-          <h2>Next step</h2>
-          <ol class="steps" id="steps"></ol>
-          <p id="next-step" class="next-step"></p>
-          <button id="next-hint">Show next step</button>
+      </div>
+
+      <aside class="surface absolute top-3 left-[4.5rem] z-10 flex max-h-[calc(100%-1.5rem)] w-64 flex-col gap-3 overflow-y-auto p-3 select-text" id="panel-reference" aria-label="Reference" hidden>
+        <div class="flex items-center justify-between">
+          <h2 class="panel-title">Reference</h2>
+          <button class="btn btn-ghost btn-icon-sm text-muted-foreground" data-panel-close="reference" title="Hide the reference" aria-label="Hide the reference"><i data-icon="x" data-size="16"></i></button>
+        </div>
+        <div class="relative overflow-hidden rounded-lg bg-white" id="reference-view">
+          <img id="reference-image" class="block max-h-44 w-full object-contain" alt="Reference">
+          <div class="pointer-events-none absolute rounded border-2 border-dashed border-brand bg-brand/10" id="reference-mark" hidden></div>
+        </div>
+        <p id="reference-empty" class="rounded-lg border border-dashed p-3 text-center text-xs leading-relaxed text-muted-foreground" hidden>
+          Blank paper: draw whatever you like. To trace or copy something, pick a reference in the level menu at the top.
+        </p>
+        <label class="flex items-center gap-3 text-xs text-muted-foreground" id="opacity-row">Underlay
+          <input id="opacity" class="min-w-0 flex-1" type="range" min="0" max="1" step="0.05" value="0.35">
+        </label>
+        <section class="flex flex-col gap-2 border-t pt-3" id="guide-panel" hidden>
+          <h2 class="panel-title">Next step</h2>
+          <ol class="steps list-decimal space-y-1 pl-5 text-sm" id="steps"></ol>
+          <p id="next-step" class="text-sm"></p>
+          <button id="next-hint" class="btn btn-secondary">Show next step</button>
         </section>
       </aside>
 
-      <aside class="float-panel right-panel" id="panel-layers" aria-label="Layers" hidden>
-        <div class="panel-head">
-          <h2 title="Tap a layer to draw on it, tap its name to rename it. 🔒 locks it, ★ counts it in the score.">Layers</h2>
-          <div class="layer-actions">
-            <button id="layer-add" title="New layer above this one (⇧N)" aria-label="New layer">＋</button>
-            <button id="layer-up" title="Move layer up" aria-label="Move layer up">▲</button>
-            <button id="layer-down" title="Move layer down" aria-label="Move layer down">▼</button>
-            <button id="layer-clear" title="Clear the strokes on this layer" aria-label="Clear layer">⌧</button>
-            <button id="layer-delete" title="Delete this layer (undo brings it back)" aria-label="Delete layer">🗑</button>
-          </div>
+      <aside class="surface absolute top-3 right-3 z-10 flex w-72 flex-col gap-3 p-3 select-text" id="panel-coach" aria-label="Score" hidden>
+        <div class="flex items-center justify-between">
+          <h2 class="panel-title">Score</h2>
+          <button class="btn btn-ghost btn-icon-sm text-muted-foreground" data-panel-close="coach" title="Close" aria-label="Close"><i data-icon="x" data-size="16"></i></button>
         </div>
-        <ul class="layers" id="layers"></ul>
-        <label class="slider-row">Opacity
-          <input id="layer-opacity" type="range" min="0" max="1" step="0.05" value="1">
-          <span id="layer-opacity-value" class="slider-value">100%</span>
-        </label>
-      </aside>
-
-      <aside class="float-panel right-panel" id="panel-coach" aria-label="Score" hidden>
-        <section>
-          <div class="panel-head">
-            <h2>Score</h2>
-            <button class="close" data-panel-close="coach" title="Close" aria-label="Close">✕</button>
-          </div>
-          <div class="score" id="score">
-            <div><span class="label">Shape</span><span id="score-shape" class="value">–</span></div>
-            <div><span class="label">Proportion</span><span id="score-proportion" class="value">–</span></div>
-          </div>
-          <p id="score-detail" class="detail"></p>
-          <div class="row">
-            <button id="score-button" class="primary">Score</button>
-            <button id="submit-button" class="primary" hidden>Submit</button>
-          </div>
-        </section>
+        <div class="grid grid-cols-2 gap-2" id="score">
+          <div class="flex flex-col items-center rounded-lg bg-secondary p-2"><span class="label-muted">Shape</span><span id="score-shape" class="text-2xl font-bold tabular-nums">–</span></div>
+          <div class="flex flex-col items-center rounded-lg bg-secondary p-2"><span class="label-muted">Proportion</span><span id="score-proportion" class="text-2xl font-bold tabular-nums">–</span></div>
+        </div>
+        <p id="score-detail" class="min-h-4 text-xs leading-relaxed text-muted-foreground"></p>
+        <div class="flex gap-2">
+          <button id="score-button" class="btn btn-default flex-1">Score</button>
+          <button id="submit-button" class="btn btn-default flex-1" hidden>Submit</button>
+        </div>
       </aside>
 
       <!-- Claude, docked on the right: say an idea and it draws it on its own layer, or ask for advice. -->
-      <aside class="float-panel chat-dock" id="panel-chat" aria-label="Claude" hidden>
-        <div class="panel-head">
-          <h2>Claude</h2>
-          <button class="close" data-panel-close="chat" title="Hide the chat" aria-label="Hide the chat">✕</button>
+      <aside class="surface absolute top-3 right-3 bottom-3 z-10 flex w-[var(--chat-w)] flex-col gap-2 overflow-hidden p-3 select-text" id="panel-chat" aria-label="Claude" hidden>
+        <div class="flex items-center justify-between">
+          <h2 class="panel-title flex items-center gap-2"><i data-icon="message-circle" data-size="16"></i>Claude</h2>
+          <button class="btn btn-ghost btn-icon-sm text-muted-foreground" data-panel-close="chat" title="Hide the chat" aria-label="Hide the chat"><i data-icon="x" data-size="16"></i></button>
         </div>
-        <div id="coach-reply" class="chat-log" aria-live="polite"></div>
-        <form class="chat-form" id="coach-panel" onsubmit="return false">
-          <textarea id="question" rows="2" placeholder="Ask Claude to draw something, or ask for advice…"></textarea>
-          <button id="ask-button" class="primary" type="button" title="Send (Enter)">Send</button>
+        <div id="coach-reply" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5" aria-live="polite"></div>
+        <form class="flex items-end gap-2" id="coach-panel" onsubmit="return false">
+          <textarea id="question" class="input max-h-36 flex-1" rows="2" placeholder="Ask Claude to draw something, or ask for advice…"></textarea>
+          <button id="ask-button" class="btn btn-default btn-icon" type="button" title="Send (Enter)" aria-label="Send"><i data-icon="send" data-size="16"></i></button>
         </form>
       </aside>
+
+      <!-- Layers: a strip along the bottom, bottom of the stack on the left, like pages in a sketchbook app. -->
+      <div class="bottom-zone pointer-events-none absolute right-3 bottom-3 left-[4.5rem] z-10 flex justify-center">
+        <aside class="surface pointer-events-auto flex max-w-full items-stretch gap-2 p-2" id="panel-layers" aria-label="Layers" hidden>
+          <ul class="layers flex min-w-0 items-stretch gap-1 overflow-x-auto" id="layers"></ul>
+          <button id="layer-add" class="btn btn-ghost h-auto w-11 shrink-0 flex-col gap-1 rounded-lg border border-dashed text-[10px] text-muted-foreground" title="New layer above this one (⇧N)" aria-label="New layer">
+            <i data-icon="plus" data-size="18"></i>Add
+          </button>
+          <span class="w-px shrink-0 self-stretch bg-border" aria-hidden="true"></span>
+          <div class="flex w-36 shrink-0 flex-col justify-center gap-3 lg:w-40">
+            <div class="flex items-center justify-between">
+              <span class="label-muted" title="Tap a layer to draw on it, tap its name to rename it. The lock stops drawing on it, the star counts it in the score.">Layer</span>
+              <div class="flex">
+                <button id="layer-down" class="btn btn-ghost btn-icon-sm" title="Move layer down (left)" aria-label="Move layer down"><i data-icon="chevron-left" data-size="16"></i></button>
+                <button id="layer-up" class="btn btn-ghost btn-icon-sm" title="Move layer up (right)" aria-label="Move layer up"><i data-icon="chevron-right" data-size="16"></i></button>
+                <button id="layer-clear" class="btn btn-ghost btn-icon-sm" title="Clear the strokes on this layer" aria-label="Clear layer"><i data-icon="brush-cleaning" data-size="15"></i></button>
+                <button id="layer-delete" class="btn btn-ghost btn-icon-sm btn-destructive-ghost" title="Delete this layer (undo brings it back)" aria-label="Delete layer"><i data-icon="trash-2" data-size="15"></i></button>
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-xs text-muted-foreground">Opacity
+              <input id="layer-opacity" class="min-w-0 flex-1" type="range" min="0" max="1" step="0.05" value="1">
+              <span id="layer-opacity-value" class="w-9 text-right tabular-nums">100%</span>
+            </label>
+          </div>
+        </aside>
+      </div>
     </section>
   </main>
 
-  <div class="project-menu" id="project-menu" role="dialog" aria-label="Projects" hidden>
-    <div class="project-menu-head">
-      <input id="project-rename" maxlength="60" aria-label="Project name" title="Rename this project: type and press Enter">
-      <button id="project-delete" class="danger" title="Delete this project" aria-label="Delete project">🗑</button>
+  <!-- Practice menu: how much help, and what to draw from. -->
+  <div class="popover fixed top-14 flex w-[min(24rem,calc(100vw-1rem))] flex-col gap-3" id="mode-menu" role="dialog" aria-label="Practice" hidden>
+    <div>
+      <h2 class="panel-title">Practice</h2>
+      <p class="mt-1 text-xs text-muted-foreground">How much help you get. Move up a level when the score stays high.</p>
     </div>
-    <label class="paper-pick" title="The sheet's shape. The reference and scoring frame always sits in its middle.">Paper
-      <select id="paper-size" aria-label="Paper size"></select>
-    </label>
-    <button id="project-new" class="primary project-new">＋ New project</button>
-    <ul class="project-list" id="project-list"></ul>
+    <div class="flex flex-col gap-1" id="level-list"></div>
+    <span class="sep-x" aria-hidden="true"></span>
+    <div class="flex flex-col gap-2">
+      <span class="label-muted">Draw from</span>
+      <div class="flex gap-2">
+        <select id="reference" class="input flex-1" aria-label="Reference"></select>
+        <label class="btn btn-outline cursor-pointer" title="Upload your own reference image" aria-label="Upload a reference">
+          <i data-icon="upload" data-size="16"></i>Upload
+          <input id="upload" type="file" accept="image/*" hidden>
+        </label>
+      </div>
+    </div>
   </div>
 
-  <div class="pin-overlay" id="pin-overlay" hidden>
-    <form class="pin-box" id="pin-form">
-      <h2>Enter the PIN</h2>
-      <p>It is printed in the terminal where the server runs.</p>
-      <input id="pin-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
-      <button class="primary" type="submit">Open</button>
-      <p class="error" id="pin-error"></p>
+  <div class="popover fixed top-14 left-2 flex max-h-[70vh] w-[min(22rem,calc(100vw-1rem))] flex-col gap-3 overflow-hidden" id="project-menu" role="dialog" aria-label="Projects" hidden>
+    <div class="flex gap-2">
+      <input id="project-rename" class="input font-semibold" maxlength="60" aria-label="Project name" title="Rename this project: type and press Enter">
+      <button id="project-delete" class="btn btn-outline btn-icon btn-destructive-ghost" title="Delete this project" aria-label="Delete project"><i data-icon="trash-2" data-size="16"></i></button>
+    </div>
+    <label class="flex items-center gap-3 text-xs text-muted-foreground" title="The sheet's shape. The reference and scoring frame always sits in its middle.">Paper
+      <select id="paper-size" class="input flex-1" aria-label="Paper size"></select>
+    </label>
+    <button id="project-new" class="btn btn-default w-full"><i data-icon="plus" data-size="16"></i>New project</button>
+    <ul class="project-list flex flex-col gap-0.5 overflow-y-auto" id="project-list"></ul>
+  </div>
+
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" id="pin-overlay" hidden>
+    <form class="surface flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-3 p-5" id="pin-form">
+      <h2 class="text-lg font-semibold">Enter the PIN</h2>
+      <p class="text-sm text-muted-foreground">It is printed in the terminal where the server runs.</p>
+      <input id="pin-input" class="input h-14 text-center text-3xl tracking-[0.3em]" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+      <button class="btn btn-default" type="submit">Open</button>
+      <p class="min-h-4 text-sm text-destructive" id="pin-error"></p>
     </form>
   </div>
 

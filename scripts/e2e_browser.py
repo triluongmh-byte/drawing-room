@@ -1,14 +1,37 @@
 """End-to-end check in a real browser: draws with synthetic pen events, scores, asks the coach, saves screenshots.
 
-Needs a running server on port 8430 and Google Chrome. Run:
-    uv run drawing-room serve &
-    uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots
+Needs a running server (port 8430 unless a URL is given) and Google Chrome. Run it against a throwaway data dir:
+    uv run drawing-room serve --port 8431 --data "$(mktemp -d)" &
+    uv run --with playwright --with pillow python scripts/e2e_browser.py docs/screenshots http://127.0.0.1:8431/
 """
 import json, math, sys, time
 from playwright.sync_api import sync_playwright
 
-URL = "http://127.0.0.1:8430/"
+
+# The level and reference live in the practice menu, the tools in the toolbox flyouts: set them the way a tap would.
+def pick(page, selector, value):
+    page.eval_on_selector(selector, "(el, v) => { el.value = v; el.dispatchEvent(new Event('change')); }", value)
+
+
+def tool(page, name):
+    """Pick a tool from the toolbox: tap its group, then the tool in the flyout; Escape closes the flyout."""
+    if name == "eraser":
+        page.click("#toolbox [data-tool=eraser]")
+        return
+    group = "paint" if name in ("brush", "shade", "highlighter") else "write"
+    if not page.is_visible(f"#tool-flyout[data-group={group}]"):
+        page.click(f"#toolbox [data-group={group}]")
+    page.click(f"#tool-flyout [data-tool={name}]")
+    page.keyboard.press("Escape")
+
+
+def open_panel(page, name):
+    if page.get_attribute(f"[data-panel-toggle={name}]", "aria-expanded") != "true":
+        page.click(f"[data-panel-toggle={name}]")
+
 OUT = sys.argv[1]
+# The server to test; pass one started with a throwaway --data dir, never the one holding your drawings.
+URL = sys.argv[2] if len(sys.argv) > 2 else "http://127.0.0.1:8430/"
 
 DRAW = """
 async ({points, type, id}) => {
@@ -53,11 +76,11 @@ with sync_playwright() as p:
     page.evaluate("() => localStorage.clear()")
     page.reload()
     page.wait_for_function("() => window.drawingRoom.state.references.length > 0")
-    page.click("[data-panel-toggle=coach]")  # score and coach float over the paper; open them
+    open_panel(page, "coach")  # score and coach float over the paper; open them
 
     # Level 0 drill: straight line between two dots, auto-scored.
-    page.select_option("#level", "0")
-    page.select_option("#reference", "line")
+    pick(page, "#level", "0")
+    pick(page, "#reference", "line")
     page.wait_for_timeout(300)
     page.evaluate(DRAW, {"points": line((252, 468), (748, 293)), "type": "pen", "id": 1})
     # Drills score themselves after each stroke: no button press.
@@ -67,8 +90,8 @@ with sync_playwright() as p:
 
     # Level 1, cube: guided steps; draw the front face only and watch the guide move to step 2.
     page.evaluate("() => { window.drawingRoom.state.history.clear(); }")
-    page.select_option("#level", "1")
-    page.select_option("#reference", "cube")
+    pick(page, "#level", "1")
+    pick(page, "#reference", "cube")
     page.wait_for_timeout(300)
     front = [[300, 285], [580, 285], [580, 565], [300, 565], [300, 285]]
     pts = []
@@ -90,8 +113,8 @@ with sync_playwright() as p:
 
     # Level 2, circle with an offset trace: score, then ask the coach.
     page.evaluate("() => { window.drawingRoom.state.history.clear(); }")
-    page.select_option("#level", "2")
-    page.select_option("#reference", "circle")
+    pick(page, "#level", "2")
+    pick(page, "#reference", "circle")
     page.wait_for_timeout(300)
     page.evaluate(DRAW, {"points": ellipse(530, 380, 215, 200, wobble=6), "type": "pen", "id": 3})
     page.click("#score-button")
@@ -124,8 +147,8 @@ with sync_playwright() as p:
 
     # Level 3: draw the circle small and off-centre; alignment means no penalty.
     page.evaluate("() => { window.drawingRoom.state.history.clear(); window.drawingRoom.state.marks = []; }")
-    page.select_option("#level", "3")
-    page.select_option("#reference", "circle")
+    pick(page, "#level", "3")
+    pick(page, "#reference", "circle")
     page.wait_for_timeout(300)
     page.evaluate(DRAW, {"points": ellipse(300, 260, 120, 120), "type": "pen", "id": 4})
     page.click("#score-button")
@@ -144,8 +167,8 @@ with sync_playwright() as p:
     # Level 4: coach stays silent until Submit, then scores and reviews.
     page.evaluate("() => { window.drawingRoom.state.history.clear(); }")
     page.keyboard.press("0")
-    page.select_option("#level", "4")
-    page.select_option("#reference", "cylinder")
+    pick(page, "#level", "4")
+    pick(page, "#reference", "cylinder")
     page.wait_for_timeout(300)
     assert page.is_disabled("#ask-button")
     cyl = ellipse(500, 185, 170, 60) + line((330, 185), (330, 565)) + ellipse(500, 565, 170, 60, n=60)[:31] + line((670, 565), (670, 185))
@@ -164,7 +187,7 @@ with sync_playwright() as p:
     ImageDraw.Draw(img).rectangle([100, 50, 300, 250], outline=(0, 0, 0, 255), width=6)
     img.save(upload)
     page.evaluate("() => { window.drawingRoom.state.history.clear(); }")
-    page.select_option("#level", "2")
+    pick(page, "#level", "2")
     page.set_input_files("#upload", upload)
     page.wait_for_function("() => window.drawingRoom.state.reference && window.drawingRoom.state.reference.kind === 'upload'")
     page.wait_for_timeout(300)
