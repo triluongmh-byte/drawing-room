@@ -1,37 +1,37 @@
-/* Source of static/styles.css: Tailwind v4 with shadcn/ui's design tokens (dark zinc theme).
+/* Source of static/styles.css: Tailwind v4 with shadcn/ui's design tokens (light zinc theme).
    Build with `npm run build:css`; the built file is committed so the app runs without Node. */
 
 @import "tailwindcss" source(none);
 @source "../static/index.html";
 @source "../static/js";
 
-/* shadcn/ui tokens, dark zinc. The chrome is dark in every theme so the white paper stands out. */
+/* shadcn/ui tokens, light zinc: white paper edge to edge, the tools floating on it like in a sketching app. */
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
+  --background: oklch(0.9696 0.0026 106.4); /* #f5f5f2, the paper's colour, so the top bar is part of it */
+  --foreground: oklch(0.141 0.005 285.823);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.005 285.823);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.141 0.005 285.823);
+  --primary: oklch(0.21 0.006 285.885);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.955 0.002 286.3);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.9 0.004 286.32);
+  --ring: oklch(0.705 0.015 286.067);
   /* Not in shadcn: a blue for "this is what you are drawing with / on", and the score's gold. */
-  --brand: oklch(0.623 0.188 259.815);
+  --brand: oklch(0.546 0.245 262.881);
   --brand-foreground: oklch(0.985 0 0);
-  --gold: oklch(0.828 0.189 84.429);
+  --gold: oklch(0.769 0.188 70.08);
   --chat-w: 340px;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -87,7 +87,7 @@
 }
 /* Menus and panels are see-through (85%), lightly blurred, so the drawing under them still shows. */
 @utility surface {
-  @apply rounded-xl border bg-popover/85 text-popover-foreground shadow-xl shadow-black/30 backdrop-blur-[3px];
+  @apply rounded-xl border bg-popover/85 text-popover-foreground shadow-lg shadow-black/8 backdrop-blur-[3px];
 }
 
 @layer components {
@@ -110,6 +110,7 @@
   .sep-y { @apply h-6 w-px bg-border; }
 
   /* Panel toggles in the top bar: shadcn's Toggle "on" look, quieter than a pressed tool. */
+  .btn.toggle-soft[aria-pressed="true"] { @apply bg-accent text-accent-foreground ring-1 ring-ring/60 hover:bg-accent/80; }
   .btn[data-panel-toggle].active { @apply bg-accent text-accent-foreground ring-1 ring-ring/60 hover:bg-accent/80; }
 
   /* ---- shadcn Input / Select / Textarea */
@@ -137,12 +138,12 @@
   .dash-option { @apply btn-base h-8 rounded-md px-2 text-xs font-normal text-muted-foreground hover:text-foreground; }
   .dash-option.active { @apply bg-background text-foreground shadow-sm ring-1 ring-border; }
   .swatch {
-    @apply size-7 rounded-full border border-white/15 outline-none transition-transform hover:scale-110
+    @apply size-7 rounded-full border border-black/10 outline-none transition-transform hover:scale-110
       focus-visible:ring-[3px] focus-visible:ring-ring/50;
   }
   .swatch.active { @apply ring-2 ring-primary ring-offset-2 ring-offset-popover; }
   .color-well {
-    @apply size-7 cursor-pointer appearance-none overflow-hidden rounded-full border border-white/25 bg-transparent p-0;
+    @apply size-7 cursor-pointer appearance-none overflow-hidden rounded-full border border-black/15 bg-transparent p-0;
   }
   .color-well::-webkit-color-swatch-wrapper { padding: 0; }
   .color-well::-webkit-color-swatch { border: none; border-radius: 9999px; }
@@ -163,13 +164,13 @@
     scroll-snap-align: start;
     @apply flex w-24 shrink-0 cursor-pointer flex-col gap-1 rounded-lg border border-transparent p-1 transition-colors hover:bg-accent/60;
   }
-  .layers li.active { @apply border-brand bg-brand/15; }
+  .layers li.active { @apply border-brand bg-brand/8; }
   .layers li.reference-row { @apply cursor-default border-dashed border-border hover:bg-transparent; }
-  .layers .thumb { @apply block h-[54px] w-full rounded-md bg-white object-contain; }
-  .layers li.reference-row .thumb { @apply bg-white/5; }
+  .layers .thumb { @apply block h-[54px] w-full rounded-md border bg-white object-contain; }
+  .layers li.reference-row .thumb { @apply bg-muted; }
   .layers li.hidden-layer .thumb { @apply opacity-35; }
   .layers .name { @apply min-w-0 truncate text-xs; }
-  .layers input.name { @apply h-6 rounded-sm border border-ring bg-black/30 px-1 outline-none; }
+  .layers input.name { @apply h-6 rounded-sm border border-ring bg-background px-1 outline-none; }
   .layers .row { @apply flex items-center gap-0.5; }
   .layers .row .grow-1 { @apply min-w-0 flex-1; }
   .layers button { @apply btn-base size-6 rounded-sm p-0 text-muted-foreground hover:bg-accent; }
@@ -195,12 +196,12 @@
   .msg.assistant { @apply self-start rounded-bl-sm bg-secondary text-secondary-foreground; }
   .msg.thinking { @apply italic text-muted-foreground; }
   .msg-images { @apply mb-1 flex flex-wrap gap-1; }
-  .msg-images img { @apply max-h-32 max-w-full rounded-md border border-white/10 bg-white object-contain; }
+  .msg-images img { @apply max-h-32 max-w-full rounded-md border border-black/10 bg-white object-contain; }
   .msg.user .msg-images:last-child { @apply mb-0; }
 
   /* The chat composer, shadcn-style: one bordered box holding the pictures, the text and the buttons. */
   .composer {
-    @apply flex flex-col rounded-xl border border-input bg-black/25 transition-[border-color,box-shadow]
+    @apply flex flex-col rounded-xl border border-input bg-background/70 transition-[border-color,box-shadow]
       focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30;
   }
   .composer.drop { @apply border-brand bg-brand/10 ring-[3px] ring-brand/30; }

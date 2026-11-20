@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#09090b">
+  <meta name="theme-color" content="#ffffff">
   <title>Drawing Room</title>
   <link rel="icon" href="data:,">
   <!-- Built from ../styles/app.css with `npm run build:css` (Tailwind + shadcn/ui tokens). -->
@@ -12,7 +12,7 @@
 </head>
 <body class="flex flex-col">
   <!-- One slim bar on top: the project, the practice level, and the panels. The tools live on the left. -->
-  <header class="relative z-40 flex h-12 shrink-0 items-center gap-1.5 border-b bg-background px-2 pt-[env(safe-area-inset-top)]" role="toolbar" aria-label="Project and panels">
+  <header class="relative z-40 flex h-12 shrink-0 items-center gap-1.5 bg-background px-2 pt-[env(safe-area-inset-top)]" role="toolbar" aria-label="Project and panels">
     <button id="project-button" class="btn btn-ghost max-w-56 px-2 font-semibold" aria-haspopup="true" aria-expanded="false" title="Projects">
       <i data-icon="folder" class="text-muted-foreground"></i>
       <span id="project-name" class="truncate">…</span>
@@ -44,6 +44,10 @@
     <div class="flex-1"></div>
 
     <div class="flex items-center gap-1">
+      <button id="grid-toggle" class="btn btn-ghost btn-icon toggle-soft" type="button" aria-pressed="true" title="Grid: squares to line your drawing up against (G)" aria-label="Grid">
+        <i data-icon="grid-3x3"></i>
+      </button>
+      <span class="sep-y mx-0.5" aria-hidden="true"></span>
       <button data-panel-toggle="reference" class="btn btn-ghost px-2.5" title="Reference: the picture you draw from, and the next step" aria-label="Reference" aria-expanded="false">
         <i data-icon="image"></i><span class="hidden lg:inline">Reference</span>
       </button>
@@ -63,7 +67,7 @@
   <main class="flex min-h-0 flex-1">
     <section class="paper-wrap relative min-w-0 flex-1 touch-none overflow-hidden bg-background" id="paper-wrap">
       <canvas id="paper" class="absolute inset-0 block size-full touch-none" aria-label="Drawing paper"></canvas>
-      <div class="hint pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/55 px-3 py-1 text-xs text-muted-foreground backdrop-blur" id="paper-hint">Pen or mouse draws · two fingers or space-drag pans · pinch or wheel zooms</div>
+      <div class="hint pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border bg-background/85 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur" id="paper-hint">Pen or mouse draws · two fingers or space-drag pans · pinch or wheel zooms</div>
 
       <!-- The toolbox on the left: Write and Paint open a flyout with their tools, colours and size. -->
       <nav id="toolbox" class="surface absolute top-1/2 left-3 z-20 flex -translate-y-1/2 flex-col items-center gap-1 p-1.5" aria-label="Tools">

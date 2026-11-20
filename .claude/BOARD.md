@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **Light UI, edgeless paper, grid toggle** (feat/light-ui): shadcn light theme; white paper edge to edge, draw anywhere; squared grid in paper space, toggled with the grid button or G.
 - **Claude draws on layers** (feat/claude-layers): perspective illustrations on Sketch / Color / Line layers with four line weights (faint dashed skeleton, finding lines, 60% faces, bold visible edges); hide Sketch for a clean box.
 - **Chat pictures + composer** (feat/chat-pictures): attach, paste or drop pictures for Claude to look at; a tidy shadcn composer; menus and panels 85% see-through.
 - **Dashed shapes** (feat/dashed-shapes): a Solid / Dashed toggle in the Shapes flyout; dashes scale with the line size.

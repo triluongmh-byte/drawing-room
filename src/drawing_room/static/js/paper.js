@@ -29,3 +29,35 @@ export function sheetRect(id) {
   const round = (v) => Math.round(v * 10) / 10;
   return [round(x0), round(y0), round(x0 + w), round(y0 + h)];
 }
+
+export const COORD_LIMIT = 6000; // the server's limit on paper coordinates
+
+/**
+ * The area worth showing (to Claude, in layer thumbnails): the sheet, grown to take in every stroke, since the paper
+ * has no edge and strokes may run past the sheet. `boxes` are {x0, y0, x1, y1} or null; clamped to ±COORD_LIMIT.
+ */
+export function drawingBounds(sheet, boxes) {
+  let [x0, y0, x1, y1] = sheet;
+  for (const box of boxes) {
+    if (!box || ![box.x0, box.y0, box.x1, box.y1].every(Number.isFinite)) continue;
+    x0 = Math.min(x0, box.x0); y0 = Math.min(y0, box.y0); x1 = Math.max(x1, box.x1); y1 = Math.max(y1, box.y1);
+  }
+  const clamp = (v) => Math.round(Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, v)) * 10) / 10;
+  return [clamp(x0), clamp(y0), clamp(x1), clamp(y1)];
+}
+
+/**
+ * Grid lines to draw over the paper-space box [x0, y0, x1, y1] at `scale` screen px per paper unit: a line every
+ * `step` units (50, or 5x coarser until lines are at least `minGap` px apart), every fifth one major.
+ */
+export function gridLines([x0, y0, x1, y1], scale, minGap = 10) {
+  let step = 50;
+  while (step * scale < minGap) step *= 5;
+  const lines = { step, minor: { x: [], y: [] }, major: { x: [], y: [] } };
+  for (const [axis, from, to] of [["x", x0, x1], ["y", y0, y1]]) {
+    for (let v = Math.ceil(from / step) * step + 0; v <= to; v += step) {
+      (Math.round(v / step) % 5 === 0 ? lines.major : lines.minor)[axis].push(v);
+    }
+  }
+  return lines;
+}

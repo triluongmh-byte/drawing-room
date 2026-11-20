@@ -9,13 +9,13 @@ import {
   restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
 } from "./layers.js";
 import { initPanels } from "./panels.js";
-import { DEFAULT_PAPER, PAPERS, paperId, sheetRect } from "./paper.js";
+import { DEFAULT_PAPER, PAPERS, drawingBounds, gridLines, paperId, sheetRect } from "./paper.js";
 import { settlePencil } from "./pencil.js";
 import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
 import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
 import { SHAPES, bigEnough, shapePoints } from "./shapes.js";
 import { createRuler, dragEnd, followsRuler, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
-import { addPoint, createStroke, serializeStroke, strokeHits } from "./strokes.js";
+import { addPoint, createStroke, serializeStroke, strokeBounds, strokeHits } from "./strokes.js";
 import { GROUPS, clampSize, groupOf, restoreToolSettings, shareColor, stepSize } from "./tools.js";
 import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoomAt } from "./view.js";
 
@@ -75,6 +75,7 @@ const state = {
   groupTool: { write: "pencil", paint: "brush", shapes: "shape" }, // the tool each toolbox group picks when tapped
   shapeKind: "rect", // the shape the Shapes tool drags out (shapes.js)
   shapeDash: false, // whether shapes come out dashed
+  grid: true, // the squared grid over the paper, to line strokes up against (per device)
   flyout: null, // "write" | "paint" | "eraser" while the tool flyout is open
   attachments: [], // pictures waiting to go with the next chat message: { name, full, thumb } data URLs
   project: null, // { id, name, created, updated, strokes } of the open project
@@ -140,7 +141,7 @@ const saver = createSaver(async () => {
 
 function saveDevice() {
   try {
-    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool, groupTool: state.groupTool, shapeKind: state.shapeKind, shapeDash: state.shapeDash }));
+    localStorage.setItem(DEVICE_KEY, JSON.stringify({ project: state.project?.id ?? null, tools: state.tools, tool: state.tool, groupTool: state.groupTool, shapeKind: state.shapeKind, shapeDash: state.shapeDash, grid: state.grid }));
   } catch { /* private mode or full storage: drawing still works */ }
 }
 
@@ -332,6 +333,8 @@ async function startProjects() {
   }
   if (SHAPES[device.shapeKind]) state.shapeKind = device.shapeKind;
   state.shapeDash = device.shapeDash === true;
+  state.grid = device.grid !== false;
+  renderGridToggle();
   let openId = projects.some((p) => p.id === device.project) ? device.project : projects[0]?.id;
   if (legacy && (hasStrokes(legacy) || !projects.length)) {
     const { project } = await postJSON("/api/projects", { name: hasStrokes(legacy) ? "My first drawing" : "Drawing 1", drawing: legacy });
@@ -495,48 +498,51 @@ function drawRuler() {
   ctx.restore();
 }
 
-let desk = null; // { dpr, pattern }
+/** The paper: a soft off-white, easier on the eyes than pure white (the top bar matches it). */
+const PAPER_COLOR = "#f5f5f2";
 
-/** The desk around the sheet: dark grey with a fine grid, a fixed size on screen. */
-function deskPattern(dpr) {
-  if (desk?.dpr === dpr) return desk.pattern;
-  const cell = Math.round(22 * dpr);
-  const tile = Object.assign(document.createElement("canvas"), { width: cell, height: cell });
-  const g = tile.getContext("2d");
-  g.fillStyle = "#121215";
-  g.fillRect(0, 0, cell, cell);
-  g.fillStyle = "#1d1d22";
-  g.fillRect(0, 0, cell, Math.max(1, Math.round(dpr)));
-  g.fillRect(0, 0, Math.max(1, Math.round(dpr)), cell);
-  desk = { dpr, pattern: ctx.createPattern(tile, "repeat") };
-  return desk.pattern;
+/** The squared grid over the whole screen, in paper space, so it pans, zooms and turns with the drawing. */
+function drawGrid() {
+  const rect = canvas.getBoundingClientRect();
+  const corners = [[0, 0], [rect.width, 0], [0, rect.height], [rect.width, rect.height]].map(([sx, sy]) => screenToPaper(state.view, sx, sy));
+  const box = [Math.min(...corners.map((p) => p[0])), Math.min(...corners.map((p) => p[1])),
+    Math.max(...corners.map((p) => p[0])), Math.max(...corners.map((p) => p[1]))];
+  const { scale } = state.view;
+  const lines = gridLines(box, scale);
+  ctx.lineWidth = 1 / scale;
+  for (const [kind, color] of [["minor", "rgba(80, 105, 150, 0.10)"], ["major", "rgba(80, 105, 150, 0.19)"]]) {
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    for (const gx of lines[kind].x) { ctx.moveTo(gx, box[1]); ctx.lineTo(gx, box[3]); }
+    for (const gy of lines[kind].y) { ctx.moveTo(box[0], gy); ctx.lineTo(box[2], gy); }
+    ctx.stroke();
+  }
+}
+
+function setGrid(on) {
+  state.grid = on;
+  renderGridToggle();
+  state.dirty = true;
+  saveDevice();
+}
+
+function renderGridToggle() {
+  $("grid-toggle").setAttribute("aria-pressed", String(state.grid));
 }
 
 function render() {
   state.dirty = false;
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  // The desk: dark with a fine grid, like the space around the canvas in a painting app.
-  ctx.fillStyle = deskPattern(dpr);
+  // Off-white paper with no edge, all the way across: draw anywhere. The sheet only frames the view and what Claude sees.
+  ctx.fillStyle = PAPER_COLOR;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const { x, y, scale, rotation } = state.view;
   const c = Math.cos(rotation) * scale, s = Math.sin(rotation) * scale;
   ctx.setTransform(dpr * c, dpr * s, -dpr * s, dpr * c, dpr * x, dpr * y);
 
-  // The sheet, with a soft shadow; strokes are clipped to it like on real paper.
-  const [sx0, sy0, sx1, sy1] = sheetRect(state.paper);
   ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
-  ctx.shadowBlur = 18 * dpr;
-  ctx.shadowOffsetY = 4 * dpr;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
-  ctx.restore();
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(sx0, sy0, sx1 - sx0, sy1 - sy0);
-  ctx.clip();
+  if (state.grid) drawGrid();
   if (PRACTICE && state.paper !== DEFAULT_PAPER) {
     // The reference and scoring frame inside a bigger sheet (only while practising: free drawing has none).
     ctx.strokeStyle = "rgba(60, 50, 40, 0.14)";
@@ -1015,21 +1021,32 @@ function focusLayerName() {
 const THUMB_W = 176, THUMB_H = 108; // device pixels of a layer card's picture (2x its CSS size)
 const thumbs = new Map(); // layer id -> { key, canvas }: redrawn only when the layer's strokes or the paper change
 
-function thumbKey(layer) {
-  return `${state.paper}|${layer.strokes.length}|${layer.strokes.at(-1)?.id ?? ""}|${layer.strokes[0]?.id ?? ""}`;
+function thumbKey(layer, area) {
+  return `${area.join(",")}|${layer.strokes.length}|${layer.strokes.at(-1)?.id ?? ""}|${layer.strokes[0]?.id ?? ""}`;
+}
+
+let shownArea = null; // { key, area }: the sheet grown to hold every stroke, worked out again when the drawing changes
+
+/** The sheet plus everything drawn past it, in paper units: what thumbnails show and Claude sees. */
+function drawnArea() {
+  const layers = state.history.doc.layers;
+  const key = `${state.paper}|${layers.map((l) => `${l.strokes.length}:${l.strokes.at(-1)?.id ?? ""}:${l.strokes[0]?.id ?? ""}`).join("|")}`;
+  if (shownArea?.key !== key) shownArea = { key, area: drawingBounds(sheetRect(state.paper), allStrokes(state.history.doc).map(strokeBounds)) };
+  return shownArea.area;
 }
 
 /** The layer's strokes on a little white sheet, shaped like the paper. */
 function layerThumb(layer) {
-  const key = thumbKey(layer);
+  const area = drawnArea();
+  const key = thumbKey(layer, area);
   const cached = thumbs.get(layer.id);
   if (cached?.key === key) return cached.canvas;
   const canvas = cached?.canvas ?? Object.assign(document.createElement("canvas"), { width: THUMB_W, height: THUMB_H });
   const g = canvas.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.fillStyle = "#ffffff";
+  g.fillStyle = PAPER_COLOR;
   g.fillRect(0, 0, THUMB_W, THUMB_H);
-  const [x0, y0, x1, y1] = sheetRect(state.paper);
+  const [x0, y0, x1, y1] = area;
   const scale = Math.min(THUMB_W / (x1 - x0), THUMB_H / (y1 - y0));
   g.setTransform(scale, 0, 0, scale, (THUMB_W - (x1 - x0) * scale) / 2 - x0 * scale, (THUMB_H - (y1 - y0) * scale) / 2 - y0 * scale);
   for (const stroke of layer.strokes) paintStroke(g, stroke, cachedPath(stroke));
@@ -1627,7 +1644,7 @@ async function sendChat() {
   setAssisting(true);
   try {
     const answer = await postJSON("/api/assist", {
-      level: state.level, reference: referencePayload(), sheet: sheetRect(state.paper), message: text, history,
+      level: state.level, reference: referencePayload(), sheet: drawnArea(), message: text, history,
       attachments: pictures.map((picture) => picture.full),
       // Claude's own strokes (on any of its layers) are marked, so it never takes them for the person's ink.
       strokes: (() => {
@@ -1784,6 +1801,7 @@ function wire() {
   $("question").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
   });
+  $("grid-toggle").addEventListener("click", () => setGrid(!state.grid));
   $("paper-size").addEventListener("change", (e) => { state.paper = paperId(e.target.value); fit(); save(); });
   $("pin-form").addEventListener("submit", sendPin);
 
@@ -1830,6 +1848,7 @@ function wire() {
     if (tools[key]) { setTool(tools[key]); save(); }
     else if (key === "[" || key === "]") setSize(stepSize(state.tool, state.tools[state.tool].size, key === "]" ? 1 : -1));
     else if (key === "l") toggleRuler();
+    else if (key === "g") setGrid(!state.grid);
     else if (key === "n" && e.shiftKey) addLayer();
     else if (key === "r") rotateBy((e.shiftKey ? -1 : 1) * Math.PI / 12);
     else if (key === "0") fit();
