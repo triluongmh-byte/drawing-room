@@ -69,6 +69,16 @@
       <canvas id="paper" class="absolute inset-0 block size-full touch-none" aria-label="Drawing paper"></canvas>
       <div class="hint pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border bg-background/85 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur" id="paper-hint">Pen or mouse draws · two fingers or space-drag pans · pinch or wheel zooms</div>
 
+      <!-- Writing a note on the spot just tapped. -->
+      <div id="note-editor" class="popover w-64" role="dialog" aria-label="New note" hidden>
+        <div class="mb-2 flex items-center gap-2 text-sm font-semibold"><span class="note-no" id="note-editor-no">1</span>Ask Claude about this spot</div>
+        <textarea id="note-text" class="input" rows="2" placeholder="Is this corner right? Why does it look flat?" aria-label="Note"></textarea>
+        <div class="mt-2 flex justify-end gap-2">
+          <button id="note-cancel" class="btn btn-ghost h-8 px-3 text-xs" type="button">Cancel</button>
+          <button id="note-add" class="btn btn-default h-8 px-3 text-xs" type="button">Add note</button>
+        </div>
+      </div>
+
       <!-- The toolbox on the left: Write and Paint open a flyout with their tools, colours and size. -->
       <nav id="toolbox" class="surface absolute top-1/2 left-3 z-20 flex -translate-y-1/2 flex-col items-center gap-1 p-1.5" aria-label="Tools">
         <button class="tool-btn" data-group="write" title="Write: pencil, ink and marker (P, I, M)" aria-label="Write tools" aria-haspopup="true" aria-expanded="false">
@@ -85,6 +95,9 @@
         </button>
         <button id="ruler-toggle" class="tool-btn" title="Ruler (L): start a stroke against it to draw straight; drag its ends to turn it, its middle to move it" aria-label="Ruler" aria-pressed="false">
           <i data-icon="ruler" data-size="20"></i>
+        </button>
+        <button id="note-toggle" class="tool-btn" title="Note (N): tap a spot and ask Claude about it. Notes go with your next message." aria-label="Note" aria-pressed="false">
+          <i data-icon="map-pin-plus" data-size="20"></i>
         </button>
         <span class="sep-x my-1 w-6" aria-hidden="true"></span>
         <button id="undo" class="tool-btn" title="Undo (⌘Z)" aria-label="Undo"><i data-icon="undo-2" data-size="20"></i></button>
@@ -173,6 +186,7 @@
         <div id="coach-reply" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5" aria-live="polite"></div>
         <!-- The composer: pictures waiting to go, the message, then attach on the left and send on the right. -->
         <form class="composer" id="coach-panel" onsubmit="return false">
+          <ol id="chat-notes" class="flex flex-col gap-1 px-2 pt-2" aria-label="Notes to send" hidden></ol>
           <div id="chat-attachments" class="flex flex-wrap gap-2 px-2.5 pt-2.5" aria-label="Pictures to send" hidden></div>
           <textarea id="question" class="composer-input" rows="2" placeholder="Ask Claude to draw something, or for advice…"></textarea>
           <div class="flex items-center gap-1.5 px-1.5 pb-1.5">

@@ -28,6 +28,8 @@ from drawing_room.references import MAX_IMAGE_PIXELS, PAPER_H, PAPER_W, png_byte
 DRAWING_FILE = "drawing.png"
 REFERENCE_FILE = "reference.png"
 MAX_MESSAGE = 1500
+MAX_NOTES = 12  # spots the person can pin on the drawing for one message
+MAX_NOTE = 300  # characters per note
 MAX_ATTACHMENTS = 4  # pictures the person can attach to one chat message
 ATTACHMENT_SIDE = 1600  # pixels: attached pictures are scaled down to fit this square
 MAX_HISTORY = 12
@@ -309,8 +311,27 @@ def parse_sheet(sheet) -> tuple[float, float, float, float]:
     return x0, y0, x1, y1
 
 
-def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet) -> Image.Image:
-    """The sheet with a labelled grid, the reference frame and reference (faint red), and every stroke so far."""
+def parse_notes(raw) -> list[dict]:
+    """Notes pinned on the drawing: ``[{x, y, text}]`` in paper units. Raises ValueError for anything else."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > MAX_NOTES:
+        raise ValueError(f"pin at most {MAX_NOTES} notes to a message")
+    notes = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("each note is {x, y, text}")
+        x, y = _number(item.get("x"), "x"), _number(item.get("y"), "y")
+        text = " ".join(str(item.get("text") or "").split())[:MAX_NOTE]
+        if not text:
+            raise ValueError("a note needs some text")
+        notes.append({"x": x, "y": y, "text": text})
+    return notes
+
+
+def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet, notes: list[dict] | None = None) -> Image.Image:
+    """The sheet with a labelled grid, the reference frame and reference (faint red), every stroke so far, and the
+    person's notes as numbered orange pins."""
     x0, y0, x1, y1 = sheet
     scale = min(1.0, 1200 / max(x1 - x0, y1 - y0))
     size = (max(1, round((x1 - x0) * scale)), max(1, round((y1 - y0) * scale)))
@@ -351,6 +372,10 @@ def drawing_image(reference: Image.Image | None, strokes: list[dict], sheet) -> 
             draw.ellipse([x - 2, y - 2, x + 2, y + 2], fill=color)
         elif points:
             draw.line(points, fill=color, width=2, joint="curve")
+    for number, note in enumerate(notes or [], start=1):
+        x, y = at(note["x"], note["y"])
+        draw.ellipse([x - 9, y - 9, x + 9, y + 9], fill=(240, 120, 30), outline=(255, 255, 255), width=2)
+        draw.text((x, y), str(number), fill=(255, 255, 255), anchor="mm")
     return image
 
 
@@ -384,7 +409,7 @@ def attachment_note(names: list[str]) -> str:
 
 
 def build_prompt(message: str, history: list[dict], sheet, level: int, reference_name: str | None,
-                 image_note: str) -> str:
+                 image_note: str, notes: list[dict] | None = None) -> str:
     x0, y0, x1, y1 = sheet
     parts = [
         f"Level: {coach_module.LEVEL_NAMES.get(level, level)}",
@@ -399,7 +424,12 @@ def build_prompt(message: str, history: list[dict], sheet, level: int, reference
         for turn in turns:
             who = "You" if turn.get("role") == "assistant" else "Person"
             parts.append(f"{who}: {str(turn['text'])[:MAX_MESSAGE]}")
-    parts += ["", f"The person says now: {message}", "", "Answer with the JSON object only."]
+    parts += ["", f"The person says now: {message}"]
+    if notes:
+        parts += ["", "They pinned notes on the drawing (numbered orange pins in drawing.png; paper units). Answer "
+                      "each one about that spot, by its number:"]
+        parts += [f"{n}. At x {note['x']:g}, y {note['y']:g}: {note['text']}" for n, note in enumerate(notes, start=1)]
+    parts += ["", "Answer with the JSON object only."]
     return "\n".join(parts)
 
 
@@ -425,18 +455,21 @@ def _ask_api(prompt: str, images: dict[str, bytes], client) -> str:
 
 def assist(reference_image: Image.Image | None, reference_name: str | None, strokes: list[dict], sheet,
            level: int, message: str, history: list[dict] | None = None, runner=subprocess.run,
-           api_client=None, attachments: list[bytes] | None = None) -> dict:
+           api_client=None, attachments: list[bytes] | None = None, notes: list[dict] | None = None) -> dict:
     """Ask Claude to draw or advise. Returns ``{reply, strokes, clear_previous, skipped, route}``.
 
     ``attachments`` are PNG pictures the person attached to the message (see prepare_attachment)."""
     attachments = list(attachments or [])[:MAX_ATTACHMENTS]
     message = (message or "").strip()[:MAX_MESSAGE]
+    notes = list(notes or [])[:MAX_NOTES]
+    if not message and notes:
+        message = "Look at the spots I pinned."
     if not message and attachments:
         message = "Here is a picture." if len(attachments) == 1 else "Here are some pictures."
     if not message:
         raise AssistError("say what you would like Claude to draw or explain")
     sheet = parse_sheet(sheet)
-    images = {DRAWING_FILE: png_bytes(drawing_image(reference_image, strokes, sheet))}
+    images = {DRAWING_FILE: png_bytes(drawing_image(reference_image, strokes, sheet, notes))}
     if reference_image is not None:
         images[REFERENCE_FILE] = png_bytes(reference_image.convert("RGB"))
     attached = [f"attachment-{i}.png" for i in range(1, len(attachments) + 1)]
@@ -448,7 +481,7 @@ def assist(reference_image: Image.Image | None, reference_name: str | None, stro
 
             api_client = anthropic.Anthropic()
         note = "The images are attached: " + ", ".join(images) + "." + attachment_note(attached)
-        text, route = _ask_api(build_prompt(message, history, sheet, level, reference_name, note), images,
+        text, route = _ask_api(build_prompt(message, history, sheet, level, reference_name, note, notes), images,
                                api_client), "api"
     else:
         workdir = Path(tempfile.mkdtemp(prefix="drawing-room-assist-"))
@@ -458,7 +491,7 @@ def assist(reference_image: Image.Image | None, reference_name: str | None, stro
             note = ("Read " + " and ".join(str(workdir / name) for name in images) + " before answering."
                     + attachment_note(attached))
             try:
-                text = coach_module.ask_cli(build_prompt(message, history, sheet, level, reference_name, note),
+                text = coach_module.ask_cli(build_prompt(message, history, sheet, level, reference_name, note, notes),
                                             workdir, runner, system_prompt=SYSTEM_PROMPT)
             except coach_module.CoachError as failure:
                 raise AssistError(str(failure)) from None

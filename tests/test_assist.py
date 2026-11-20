@@ -231,3 +231,30 @@ def test_shapes_can_set_width_opacity_and_dash():
     assert (strokes[0]["width"], strokes[0]["opacity"], strokes[0]["dash"]) == (1.0, 0.4, True)
     assert (strokes[1]["width"], strokes[1]["opacity"]) == (8.0, 0.1) and "dash" not in strokes[1]
     assert "width" not in strokes[2] and "opacity" not in strokes[2]
+
+
+def test_notes_pinned_on_the_drawing_reach_claude(running, tmp_path):
+    runner = AnswerRunner({"reply": "1: góc này lệch.", "shapes": []})
+    srv = running(app=App(coach_runner=runner, projects=ProjectStore(tmp_path)))
+    status, body, _ = call(srv, "POST", "/api/assist", {
+        "level": 2, "strokes": [], "message": "",
+        "notes": [{"x": 300, "y": 200, "text": "  góc này   đúng chưa? "}, {"x": 700.5, "y": 500, "text": "bóng đổ"}]})
+    assert status == 200 and body["reply"] == "1: góc này lệch."
+    prompt = runner.calls[0]["prompt"]
+    assert "Look at the spots I pinned." in prompt
+    assert "1. At x 300, y 200: góc này đúng chưa?" in prompt and "2. At x 700.5, y 500: bóng đổ" in prompt
+
+
+def test_bad_notes_are_refused(running, tmp_path):
+    srv = running(app=App(coach_runner=AnswerRunner({"reply": "Hi", "shapes": []}), projects=ProjectStore(tmp_path)))
+    for notes in [{"x": 1}, [{"x": 1, "y": 2, "text": " "}], [{"x": "a", "y": 2, "text": "t"}],
+                  [{"x": 1, "y": 9e9, "text": "t"}], [{"x": 1, "y": 2, "text": "t"}] * 13]:
+        status, body, _ = call(srv, "POST", "/api/assist", {"level": 2, "strokes": [], "message": "x", "notes": notes})
+        assert status == 400 and "note" in body["error"], notes
+
+
+def test_notes_are_numbered_orange_pins_in_the_picture():
+    image = assist.drawing_image(None, [], (0, 0, 1000, 750), [{"x": 500, "y": 375, "text": "here"}])
+    scale = image.width / 1000
+    r, g, b = image.getpixel((round(500 * scale) - 6, round(375 * scale)))
+    assert r > 200 and 90 < g < 150 and b < 80
