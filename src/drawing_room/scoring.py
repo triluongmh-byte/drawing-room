@@ -112,9 +112,10 @@ def reference_mask(reference: Reference | Image.Image) -> tuple[np.ndarray, str]
 def is_scored(stroke: dict) -> bool:
     """Whether a stroke counts: its layer's `scored` flag, or for older clients, a Sketch or Line stroke.
 
-    Shading (`shade`) is tone, not line, so it never counts: a broad pencil band would read as misses.
+    Shading (`shade`) is tone, not line, so it never counts: a broad pencil band would read as misses. Paint-bucket
+    fills (`tool: "fill"`) are colour, not line, and never count either.
     """
-    if stroke.get("shade") is True:
+    if stroke.get("shade") is True or stroke.get("tool") == "fill":
         return False
     scored = stroke.get("scored")
     if isinstance(scored, bool):

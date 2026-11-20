@@ -93,11 +93,18 @@ the ink match while the highlighter stays yellow.
 | Group | Tools |
 | --- | --- |
 | ✏️ **Write** | **Pencil**: graphite with grain. Light pressure gives a thin, pale line and firm pressure a dark one; lay the pen on its side to shade. **Ink**: crisp. **Marker**: an even felt-tip. |
-| 🖌️ **Paint** | **Colour brush**. **Shade**: the tilted-pencil band, for a mouse or trackpad. **Highlighter**: wide and multiplied onto the paper, so lines under it stay dark. |
+| 🖌️ **Paint** | **Colour brush**. **Shade**: the tilted-pencil band, for a mouse or trackpad. **Highlighter**: wide and multiplied onto the paper, so lines under it stay dark. **Paint bucket**: tap inside a closed shape to pour colour into it, like Paint. It fills under the layer's lines, and its size is how wide a gap in the lines it still treats as closed. |
 | ⬜ **Shapes** | Line, rectangle, ellipse, triangle, diamond and arrow, solid or dashed. Hold Shift for a square, a circle, or a line in 15° steps. |
+| 💧 **Colour picker** | Tap the drawing or the reference picture to take its colour, then you are back on your tool. ⌥-click does the same with any colour tool. |
 | 🧽 **Eraser** | Removes whole strokes on the active layer, including Claude's filled faces and labels. |
 | 📏 **Ruler** | Start a stroke against it and run along it, and the stroke lands on its edge; heading off across it stays freehand. Drag the ends to turn it, the middle to move it, or type an angle. |
 | 📍 **Note** | Pins a question on a spot for Claude (see above). |
+
+**Files.** Projects save themselves as you draw; the note beside the project name says Saving… or Saved ✓, and **⌘S**
+saves at once. The project menu also has:
+- **Save file** (**⇧⌘S**): downloads the project as a `.drawing.json` file. **Open file…** opens one as a new project.
+- **Export PNG / JPG**: the drawing on white, with every visible layer and anything drawn past the sheet. The
+  reference and the grid are left out.
 
 **Layers** (the strip at the bottom). Each card shows what is on that layer, zoomed onto its own strokes. A new drawing
 starts with Sketch, Line and Color, and you can have up to 24. Tap a card to draw on that layer, and tap the active
@@ -117,7 +124,9 @@ Strokes are stored as vectors (x, y, pressure, time, tilt), drawn with vendored
 | Key | | Key | |
 | --- | --- | --- | --- |
 | `P` `I` `M` | pencil, ink, marker | `B` `S` `H` | brush, shade, highlighter |
+| `F` | paint bucket | `K` | colour picker |
 | `U` | shapes | `E` | eraser |
+| `⌘S` | save now | `⇧⌘S` | save a project file |
 | `L` | ruler | `N` | note for Claude |
 | `G` | grid on / off | `[` `]` | smaller / bigger |
 | `⌘Z` / `⇧⌘Z` | undo / redo | `⇧N` | new layer |
@@ -188,7 +197,7 @@ Claude runs through `claude -p` with only the Read tool allowed and without your
 
 ```bash
 uv run pytest      # server, scoring, assist (shapes, labels, notes, pictures), PIN/Origin, logging; claude mocked
-npm test           # node --test: strokes, pencil, tools, shapes, undo/redo, layers, ruler, paper, notes, view math
+npm test           # node --test: strokes, pencil, tools, shapes, bucket fill, export, undo/redo, layers, ruler, paper, notes, view math
 npm run build      # after changing the UI: Lucide icons -> static/js/icons.js, Tailwind -> static/styles.css
 ```
 
@@ -202,6 +211,7 @@ SHOTS="$(mktemp -d)"
 uv run --with playwright python scripts/e2e_projects.py      http://127.0.0.1:8499/ "$SHOTS"
 uv run --with playwright python scripts/e2e_pencil.py        http://127.0.0.1:8499/ "$SHOTS"
 uv run --with playwright python scripts/e2e_layers_ruler.py  http://127.0.0.1:8499/ "$SHOTS"
+uv run --with playwright python scripts/e2e_files.py         http://127.0.0.1:8499/ "$SHOTS"
 uv run --with playwright --with pillow python scripts/e2e_browser.py "$SHOTS" http://127.0.0.1:8499/   # calls Claude
 ```
 
