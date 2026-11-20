@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **Draw from a picture** (feat/draw-from-picture): Claude copies an attached picture (~90%), looks again and redraws; only Sketch/Color/Line/Notes layers; never drops strokes when 24 layers are full.
 
 ## Ready for Deploy
 - **Board + README tidy-up** (PR #15, merged): fresh practice screenshots, unused pictures removed, every picture renamed so no cached old one shows, browser checks write to a temp folder on a throwaway server.

@@ -39,6 +39,9 @@ COORD_LIMIT = 6000
 STEP = 3.0  # paper units between sampled points
 STYLES = ("line", "construction")
 MAX_LAYER_NAME = 24
+# The only layers Claude may name; anything else goes on its "Claude" layer, so it never piles up layers.
+LAYER_NAMES = ("Sketch", "Color", "Line", "Notes")
+DRAFT_FILE = "draft.png"
 MAX_LABEL = 80  # characters in a label Claude writes on the drawing
 LABEL_SIZES = (10.0, 48.0, 18.0)  # smallest, largest and default text height, paper units
 ALIGNS = ("left", "center", "right")
@@ -77,7 +80,8 @@ Use construction lines for guides, axes, boxes and perspective lines; use line f
 A shape may set its line "width" (0.5 to 8 paper units; default 1.6 for construction, 2.6 for line), its
 "opacity" (0.1 to 1, default 1) and "dash": true for a dashed line.
 Every shape may also add "layer": "<name>" to go on a layer of yours with that name (made the first time, reused
-after, never scored; without it the shape goes on your layer "Claude"), and "fill": true to paint a closed shape
+after, never scored; without it the shape goes on your layer "Claude"). The only names are "Sketch", "Color",
+"Line" and "Notes"; any other name goes on "Claude", and "fill": true to paint a closed shape
 (rect, circle, ellipse, closed polyline) as a solid area in its colour instead of an outline. Layers are stacked
 in the order you first use them, the first one lowest.
 Set "clear_previous": true only when the person asks you to redo or remove what you drew before; it empties every
@@ -95,8 +99,21 @@ onto the picture so the student does not have to look back and forth between the
   what they name. Keep them inside the sheet and apart from one another.
 - Then the reply refers to the numbers ("bước 2: …") instead of describing positions again.
 
+DRAWING FROM A PICTURE. When the person attached a picture and asks you to draw it, or something like it (a building,
+an object, a scene), copy THAT picture, about 90% alike, not a generic box:
+- Read it before drawing: the viewpoint (where the eye level is, which vanishing points, seen from above or below),
+  how many main masses there are and how they stack or step back, and each mass's width : height : depth, measured
+  off the picture against one another. Note where the big openings and roof lines are.
+- Draw in that same view and those proportions, with the same silhouette: block in the masses with light construction
+  lines (layer "Sketch"), then the visible outline and main edges (layer "Line"), then the largest features as simple
+  shapes: rows of windows, balconies, roof edges, steps.
+- Not too detailed: skip hatching, texture, people, plants and every small part; a few representative windows per
+  facade are enough. No colour-coded fills unless the picture is coloured; keep it a line drawing like the picture.
+- The rules for perspective illustrations below do not apply here (several masses are fine, no fixed face colours,
+  no four-sentence reply). Reply in two or three sentences: what you matched and what you simplified.
+
 PERSPECTIVE ILLUSTRATIONS. When the person asks you to draw a perspective illustration (a box in 1, 2 or 3-point
-perspective, a horizon, vanishing points), the student must be able to read it at a glance, and hiding the layer
+perspective, a horizon, vanishing points) and has not attached a picture to copy, the student must be able to read it at a glance, and hiding the layer
 "Sketch" must leave a clean box while showing it again reveals the whole construction:
 - ONE box and ONE horizon per illustration. Never several boxes in one picture: if they want several cases, draw one
   now and offer the next. A new illustration replaces the previous one ("clear_previous": true).
@@ -249,7 +266,10 @@ def _layer_name(value) -> str | None:
     if not isinstance(value, str):
         return None
     name = " ".join(value.split())[:MAX_LAYER_NAME].strip()
-    return name or None
+    for allowed in LAYER_NAMES:
+        if name.casefold() == allowed.casefold():
+            return allowed
+    return None
 
 
 def _label_text(shape: dict) -> str:
@@ -527,31 +547,77 @@ def assist(reference_image: Image.Image | None, reference_name: str | None, stro
     attached = [f"attachment-{i}.png" for i in range(1, len(attachments) + 1)]
     images.update(zip(attached, attachments))
     history = history if isinstance(history, list) else []
-    if api_client is not None or coach_module.use_api():
-        if api_client is None:
-            import anthropic
+    if api_client is None and coach_module.use_api():
+        import anthropic
 
-            api_client = anthropic.Anthropic()
-        note = "The images are attached: " + ", ".join(images) + "." + attachment_note(attached)
-        text, route = _ask_api(build_prompt(message, history, sheet, level, reference_name, note, notes), images,
-                               api_client), "api"
-    else:
-        workdir = Path(tempfile.mkdtemp(prefix="drawing-room-assist-"))
-        try:
-            for name, data in images.items():
-                (workdir / name).write_bytes(data)
-            note = ("Read " + " and ".join(str(workdir / name) for name in images) + " before answering."
-                    + attachment_note(attached))
-            try:
-                text = coach_module.ask_cli(build_prompt(message, history, sheet, level, reference_name, note, notes),
-                                            workdir, runner, system_prompt=SYSTEM_PROMPT)
-            except coach_module.CoachError as failure:
-                raise AssistError(str(failure)) from None
-            route = "claude-cli"
-        finally:
-            shutil.rmtree(workdir, ignore_errors=True)
+        api_client = anthropic.Anthropic()
+    text, route = _ask(lambda note: build_prompt(message, history, sheet, level, reference_name,
+                                                 note + attachment_note(attached), notes),
+                       images, runner, api_client)
     answer = parse_answer(text)
     drawn, skipped = shapes_to_strokes(answer["shapes"])
+    if attached and drawn:
+        # Drawing from a picture: look at the draft next to the picture once more and redraw what does not match.
+        redrawn = _redraw(message, answer, drawn, sheet, dict(zip(attached, attachments)), runner, api_client)
+        if redrawn is not None:
+            answer, (drawn, skipped) = redrawn
     reply = answer["reply"] or ("Done." if drawn else "Claude returned no reply.")
     return {"reply": reply, "strokes": drawn, "clear_previous": answer["clear_previous"], "skipped": skipped,
             "route": route}
+
+
+def _ask(make_prompt, images: dict[str, bytes], runner, api_client) -> tuple[str, str]:
+    """One question to Claude with these images: through the API when there is a client, else ``claude -p``.
+    ``make_prompt(note)`` builds the prompt around a note saying where the images are."""
+    if api_client is not None:
+        note = "The images are attached: " + ", ".join(images) + "."
+        return _ask_api(make_prompt(note), images, api_client), "api"
+    workdir = Path(tempfile.mkdtemp(prefix="drawing-room-assist-"))
+    try:
+        for name, data in images.items():
+            (workdir / name).write_bytes(data)
+        note = "Read " + " and ".join(str(workdir / name) for name in images) + " before answering."
+        try:
+            return coach_module.ask_cli(make_prompt(note), workdir, runner, system_prompt=SYSTEM_PROMPT), "claude-cli"
+        except coach_module.CoachError as failure:
+            raise AssistError(str(failure)) from None
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def redraw_prompt(message: str, first: dict, sheet, note: str) -> str:
+    x0, y0, x1, y1 = sheet
+    return "\n".join([
+        "REDRAW CHECK. You were asked to draw from the person's picture, and drew a first version.",
+        f"Sheet bounds: x {x0:g} to {x1:g}, y {y0:g} to {y1:g}.",
+        note,
+        f"{DRAFT_FILE} shows only your first version, on the same labelled grid as before.",
+        f"The person asked: {message}",
+        f"Your first reply: {first.get('reply', '')}",
+        "",
+        "Put the picture and your draft side by side and compare: the viewpoint (eye level, vanishing points), the "
+        "number of masses and how they stack, each mass's width : height : depth, the silhouette, and where the big "
+        "openings and roof lines sit. Aim for about 90% alike, not every detail.",
+        "Then answer with the COMPLETE corrected set of shapes, the same JSON as before: it replaces the draft "
+        "entirely, so include everything that was right too. Keep the same layers. In the reply (two or three "
+        "sentences) say what you matched and what you simplified.",
+        "",
+        "Answer with the JSON object only.",
+    ])
+
+
+def _redraw(message: str, first: dict, drawn: list[dict], sheet, pictures: dict[str, bytes], runner, api_client):
+    """A second look: the draft next to the picture, redrawn. None when that goes wrong (keep the first answer)."""
+    draft = drawing_image(None, [{**stroke, "assistant": False} for stroke in drawn], sheet)
+    images = {DRAFT_FILE: png_bytes(draft), **pictures}
+    try:
+        text, _ = _ask(lambda note: redraw_prompt(message, first, sheet, note), images, runner, api_client)
+    except AssistError:
+        return None
+    second = parse_answer(text)
+    redrawn, skipped = shapes_to_strokes(second["shapes"])
+    if not redrawn:
+        return None
+    second["clear_previous"] = first["clear_previous"]
+    second["reply"] = second["reply"] or first["reply"]
+    return second, (redrawn, skipped)
