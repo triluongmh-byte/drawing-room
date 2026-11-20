@@ -21,6 +21,13 @@ function outlineToPath(outline) {
 }
 
 export function strokePath(stroke, { last = false } = {}) {
+  if (stroke.fill) {
+    // A painted area (Claude's faces): the polygon through the points, filled flat.
+    const path = new Path2D();
+    stroke.points.forEach(([x, y], i) => (i ? path.lineTo(x, y) : path.moveTo(x, y)));
+    path.closePath();
+    return path;
+  }
   const tool = TOOLS[stroke.tool] || TOOLS.ink;
   // A pencil laid on its side shades: broad and soft rather than a pressure-thinned line.
   const tilted = stroke.tool === "pencil" && stroke.shade;

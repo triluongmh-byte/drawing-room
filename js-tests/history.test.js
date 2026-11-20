@@ -157,3 +157,16 @@ test("Claude's strokes for one message are one undo step, and can replace what i
   history.redo();
   assert.equal(getLayer(history.doc, claude.id).strokes.length, 2);
 });
+
+test("addMany can empty several layers in the same undo step", () => {
+  const history = new History(createDocument());
+  const lines = history.addLayer({ name: "Đường dựng", scored: false });
+  const box = history.addLayer({ name: "Hộp", scored: false });
+  history.addMany([stroke(lines.id, "a"), stroke(box.id, "b")]);
+  history.addMany([stroke(box.id, "c")], { replace: [lines.id, box.id] });
+  assert.equal(getLayer(history.doc, lines.id).strokes.length, 0);
+  assert.deepEqual(getLayer(history.doc, box.id).strokes.map((s) => s.id), ["c"]);
+  history.undo();
+  assert.deepEqual(getLayer(history.doc, lines.id).strokes.map((s) => s.id), ["a"]);
+  assert.deepEqual(getLayer(history.doc, box.id).strokes.map((s) => s.id), ["b"]);
+});

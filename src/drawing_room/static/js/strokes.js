@@ -56,8 +56,22 @@ export function distanceToSegment(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
-/** Whether a circle of `radius` at (x, y) touches the stroke's centre line (widened by half its painted width). */
+/** Whether (x, y) lies inside the polygon through `points` (even-odd rule). */
+export function insidePolygon(points, x, y) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [xi, yi] = points[i], [xj, yj] = points[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Whether a circle of `radius` at (x, y) touches the stroke's centre line (widened by half its painted width),
+ * or, for a filled area, lies inside it.
+ */
 export function strokeHits(stroke, x, y, radius) {
+  if (stroke.fill && stroke.points.length >= 3 && insidePolygon(stroke.points, x, y)) return true;
   const reach = radius + paintedSize(stroke) / 2;
   const box = strokeBounds(stroke);
   if (!box || x < box.x0 - reach || x > box.x1 + reach || y < box.y0 - reach || y > box.y1 + reach) return false;

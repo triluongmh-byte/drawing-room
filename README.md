@@ -97,7 +97,11 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   ask Claude for the rest; ask "redo it" to replace what it drew. One undo takes back everything Claude drew for a
   message. The Claude layer is not scored (★ off). Ask questions in the same chat for advice. Attach pictures for
   Claude to look at (up to 4 a message): the paperclip, paste one into the message, or drop one anywhere on the page.
-  They are scaled to 1600 px and sent with that message only; a small thumbnail stays in the chat. The chat is kept with the
+  They are scaled to 1600 px and sent with that message only; a small thumbnail stays in the chat.
+  Claude can draw on several layers of its own and set each line's width, opacity and dash, and fill faces. For a
+  perspective illustration it draws one box: the faint dashed construction and the finding lines on "Sketch", the
+  faces at 60% on "Color", and the bold visible edges on "Line" (prefixed "Claude" when you already have a layer of
+  that name). Hide its Sketch layer to see a clean box. The chat is kept with the
   project. It is off in the warm-up drills, and at level 4 until you submit; the review then appears in the chat.
 - **Layers**: a strip along the bottom, one card with a thumbnail per layer, the bottom of the stack on the left (‹ ›
   move the active layer down or up). The strip keeps one width; more layers scroll sideways (a sideways wheel, a

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addPoint, createStroke, serializeStroke, strokeBounds, strokeHits, strokeLength, strokeStats } from "../src/drawing_room/static/js/strokes.js";
+import { addPoint, createStroke, insidePolygon, serializeStroke, strokeBounds, strokeHits, strokeLength, strokeStats } from "../src/drawing_room/static/js/strokes.js";
 
 test("a stroke keeps points with pressure, time and tilt", () => {
   const stroke = createStroke({ layer: "line", tool: "ink" });
@@ -60,4 +60,16 @@ test("highlighter strokes are sent as tone (shade) so scoring and the coach skip
   const marker = createStroke({ layer: "line", tool: "marker" });
   addPoint(marker, 1, 1);
   assert.equal("shade" in serializeStroke(marker), false);
+});
+
+test("a filled area is hit anywhere inside it, an outline only near its line", () => {
+  const square = [[0, 0], [100, 0], [100, 100], [0, 100]];
+  assert.equal(insidePolygon(square, 50, 50), true);
+  assert.equal(insidePolygon(square, 150, 50), false);
+  const face = createStroke({ layer: "l", tool: "brush", size: 1 });
+  const outline = createStroke({ layer: "l", tool: "ink", size: 1 });
+  for (const [x, y] of square) { addPoint(face, x, y, 0.5, 0); addPoint(outline, x, y, 0.5, 0); }
+  face.fill = true;
+  assert.equal(strokeHits(face, 50, 50, 2), true);
+  assert.equal(strokeHits(outline, 50, 50, 2), false);
 });
