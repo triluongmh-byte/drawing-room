@@ -104,6 +104,9 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   perspective illustration it draws one box: the faint dashed construction and the finding lines on "Sketch", the
   faces at 60% on "Color", and the bold visible edges on "Line" (prefixed "Claude" when you already have a layer of
   that name). Hide its Sketch layer to see a clean box.
+  Claude explains on the drawing itself: real text labels beside the points that matter (vanishing points, the corner
+  it constructs) and numbered steps in drawing order, on its own "Notes" layer; the chat reply then refers to the
+  step numbers.
   **Notes (N)**: with the pin tool in the toolbox, tap a spot and write a question ("is this corner square?"). A numbered
   orange pin marks it, the note waits above the message box (× removes it), and it goes with your next message: Claude
   gets each note with its place and sees the numbered pins on the drawing, and answers them by number. The chat is kept with the

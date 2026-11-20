@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **Claude explains on the drawing + layer thumbnails** (feat/claude-labels): real text labels and numbered steps on a "Notes" layer; layer cards zoom onto their own strokes.
 - **Notes for Claude** (feat/chat-notes): Note tool (N) pins numbered questions on the paper; they go with the next chat message, with their spot, and show as pins in what Claude sees.
 - **Light UI, edgeless paper, grid toggle** (feat/light-ui): shadcn light theme; white paper edge to edge, draw anywhere; squared grid in paper space, toggled with the grid button or G.
 - **Claude draws on layers** (feat/claude-layers): perspective illustrations on Sketch / Color / Line layers with four line weights (faint dashed skeleton, finding lines, 60% faces, bold visible edges); hide Sketch for a clean box.

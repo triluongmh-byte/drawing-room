@@ -21,6 +21,7 @@ function outlineToPath(outline) {
 }
 
 export function strokePath(stroke, { last = false } = {}) {
+  if (stroke.text) return new Path2D(); // a label is painted as text (paintLabel)
   if (stroke.fill) {
     // A painted area (Claude's faces): the polygon through the points, filled flat.
     const path = new Path2D();
@@ -117,7 +118,36 @@ export function strokeOpacity(stroke) {
   return stroke.opacity ?? 1;
 }
 
+export const LABEL_FONT = "600 {size}px Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+/**
+ * A label Claude wrote: text at its point, `size` paper units tall, aligned left / center / right of it, on a soft
+ * paper-coloured backing so it stays readable over lines and fills.
+ */
+export function paintLabel(ctx, stroke) {
+  const [x, y] = stroke.points[0] ?? [0, 0];
+  const size = stroke.size || 18;
+  const lines = String(stroke.text).split("\n");
+  ctx.save();
+  ctx.globalAlpha = stroke.opacity ?? 1;
+  ctx.font = LABEL_FONT.replace("{size}", String(size));
+  ctx.textAlign = stroke.align === "center" || stroke.align === "right" ? stroke.align : "left";
+  ctx.textBaseline = "middle";
+  const lineHeight = size * 1.25;
+  const width = Math.max(...lines.map((line) => ctx.measureText(line).width));
+  const left = ctx.textAlign === "center" ? x - width / 2 : ctx.textAlign === "right" ? x - width : x;
+  const pad = size * 0.25;
+  ctx.fillStyle = "rgba(245, 245, 242, 0.82)";
+  ctx.beginPath();
+  ctx.roundRect(left - pad, y - lineHeight / 2 - pad * 0.4, width + pad * 2, lineHeight * lines.length + pad * 0.8, size * 0.3);
+  ctx.fill();
+  ctx.fillStyle = stroke.color || "#1f2328";
+  lines.forEach((line, i) => ctx.fillText(line, x, y + i * lineHeight));
+  ctx.restore();
+}
+
 export function paintStroke(ctx, stroke, path) {
+  if (stroke.text) { paintLabel(ctx, stroke); return; }
   ctx.globalAlpha = strokeOpacity(stroke);
   const blend = TOOLS[stroke.tool]?.blend;
   if (blend) ctx.globalCompositeOperation = blend;

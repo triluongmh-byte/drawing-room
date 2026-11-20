@@ -9,10 +9,10 @@ import {
   restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
 } from "./layers.js";
 import { initPanels } from "./panels.js";
-import { DEFAULT_PAPER, PAPERS, drawingBounds, gridLines, paperId, sheetRect } from "./paper.js";
+import { DEFAULT_PAPER, PAPERS, drawingBounds, fitBoxes, gridLines, paperId, sheetRect } from "./paper.js";
 import { settlePencil } from "./pencil.js";
 import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
-import { TOOLS, cachedPath, paintStroke, strokePath } from "./render.js";
+import { TOOLS, cachedPath, paintStroke, strokeOpacity, strokePath } from "./render.js";
 import { SHAPES, bigEnough, shapePoints } from "./shapes.js";
 import { createRuler, dragEnd, followsRuler, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeBounds, strokeHits } from "./strokes.js";
@@ -1121,24 +1121,36 @@ function focusLayerName() {
 const THUMB_W = 176, THUMB_H = 108; // device pixels of a layer card's picture (2x its CSS size)
 const thumbs = new Map(); // layer id -> { key, canvas }: redrawn only when the layer's strokes or the paper change
 
-function thumbKey(layer, area) {
-  return `${area.join(",")}|${layer.strokes.length}|${layer.strokes.at(-1)?.id ?? ""}|${layer.strokes[0]?.id ?? ""}`;
+function thumbKey(layer) {
+  return `${layer.strokes.length}|${layer.strokes.at(-1)?.id ?? ""}|${layer.strokes[0]?.id ?? ""}`;
+}
+
+/** Where a stroke sits, labels included (their text, roughly). */
+function strokeBox(stroke) {
+  if (!stroke.text || !stroke.points.length) return strokeBounds(stroke);
+  const [x, y] = stroke.points[0];
+  const size = stroke.size || 18, lines = String(stroke.text).split("\n");
+  const width = Math.max(...lines.map((line) => line.length)) * size * 0.58;
+  const left = stroke.align === "center" ? x - width / 2 : stroke.align === "right" ? x - width : x;
+  return { x0: left, y0: y - size * 0.7, x1: left + width, y1: y + size * 1.25 * lines.length };
 }
 
 let shownArea = null; // { key, area }: the sheet grown to hold every stroke, worked out again when the drawing changes
 
-/** The sheet plus everything drawn past it, in paper units: what thumbnails show and Claude sees. */
+/** The sheet plus everything drawn past it, in paper units: what Claude sees. */
 function drawnArea() {
   const layers = state.history.doc.layers;
   const key = `${state.paper}|${layers.map((l) => `${l.strokes.length}:${l.strokes.at(-1)?.id ?? ""}:${l.strokes[0]?.id ?? ""}`).join("|")}`;
-  if (shownArea?.key !== key) shownArea = { key, area: drawingBounds(sheetRect(state.paper), allStrokes(state.history.doc).map(strokeBounds)) };
+  if (shownArea?.key !== key) shownArea = { key, area: drawingBounds(sheetRect(state.paper), allStrokes(state.history.doc).map(strokeBox)) };
   return shownArea.area;
 }
 
-/** The layer's strokes on a little white sheet, shaped like the paper. */
+/**
+ * What is on the layer, as a little picture: zoomed onto that layer's own strokes (not the whole sheet, where thin
+ * lines would vanish), with lines drawn at least about a pixel wide so even faint guides show.
+ */
 function layerThumb(layer) {
-  const area = drawnArea();
-  const key = thumbKey(layer, area);
+  const key = thumbKey(layer);
   const cached = thumbs.get(layer.id);
   if (cached?.key === key) return cached.canvas;
   const canvas = cached?.canvas ?? Object.assign(document.createElement("canvas"), { width: THUMB_W, height: THUMB_H });
@@ -1146,10 +1158,21 @@ function layerThumb(layer) {
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.fillStyle = PAPER_COLOR;
   g.fillRect(0, 0, THUMB_W, THUMB_H);
-  const [x0, y0, x1, y1] = area;
-  const scale = Math.min(THUMB_W / (x1 - x0), THUMB_H / (y1 - y0));
-  g.setTransform(scale, 0, 0, scale, (THUMB_W - (x1 - x0) * scale) / 2 - x0 * scale, (THUMB_H - (y1 - y0) * scale) / 2 - y0 * scale);
-  for (const stroke of layer.strokes) paintStroke(g, stroke, cachedPath(stroke));
+  const fit = fitBoxes(layer.strokes.map(strokeBox), THUMB_W, THUMB_H);
+  if (fit) {
+    g.setTransform(fit.scale, 0, 0, fit.scale, fit.dx, fit.dy);
+    g.lineCap = g.lineJoin = "round";
+    for (const stroke of layer.strokes) {
+      if (stroke.fill || stroke.text || stroke.points.length < 2) { paintStroke(g, stroke, cachedPath(stroke)); continue; }
+      g.globalAlpha = Math.max(0.55, strokeOpacity(stroke));
+      g.strokeStyle = stroke.color || "#141312";
+      g.lineWidth = Math.max(stroke.size * 0.7, 2.2 / fit.scale);
+      g.beginPath();
+      stroke.points.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+  }
   thumbs.set(layer.id, { key, canvas });
   return canvas;
 }
@@ -1723,7 +1746,10 @@ function claudeStrokes(drawn) {
     const stroke = shape.fill
       ? createStroke({ layer: layer.id, tool: "brush", size: 1, opacity, color: shape.color ?? "#cfd8e3" })
       : createStroke({ layer: layer.id, tool: "shape", size: Number.isFinite(shape.width) ? shape.width : style.size, opacity, color: shape.color ?? style.color });
-    if (shape.fill) stroke.fill = true;
+    if (typeof shape.text === "string" && shape.text) {
+      // A label: real text on the drawing, its size the letter height in paper units.
+      Object.assign(stroke, { text: shape.text, size: Number.isFinite(shape.size) ? shape.size : 18, align: shape.align ?? "left" });
+    } else if (shape.fill) stroke.fill = true;
     else if (shape.dash) stroke.dash = true;
     shape.points.forEach(([x, y], i) => addPoint(stroke, x, y, 0.5, t0 + i, 0, 0));
     if (stroke.points.length) strokes.push(stroke);
@@ -1754,9 +1780,11 @@ async function sendChat() {
       // Claude's own strokes (on any of its layers) are marked, so it never takes them for the person's ink.
       strokes: (() => {
         const mine = new Set(claudeLayerIds());
-        const filled = new Set(allStrokes(state.history.doc).filter((stroke) => stroke.fill).map((stroke) => stroke.id));
-        return strokesForScoring(state.history.doc, serializeStroke)
-          .map((stroke) => ({ ...stroke, assistant: mine.has(stroke.layer), ...(filled.has(stroke.id) ? { fill: true } : {}) }));
+        const byId = new Map(allStrokes(state.history.doc).map((stroke) => [stroke.id, stroke]));
+        return strokesForScoring(state.history.doc, serializeStroke).map((stroke) => {
+          const { fill, text, size, align } = byId.get(stroke.id) ?? {};
+          return { ...stroke, assistant: mine.has(stroke.layer), ...(fill ? { fill: true } : {}), ...(text ? { text, size, align } : {}) };
+        });
       })(),
     });
     let note = "";

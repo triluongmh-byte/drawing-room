@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FRAME_H, FRAME_W, PAPERS, paperId, sheetRect, COORD_LIMIT, drawingBounds, gridLines } from "../src/drawing_room/static/js/paper.js";
+import { FRAME_H, FRAME_W, PAPERS, paperId, sheetRect, COORD_LIMIT, drawingBounds, fitBoxes, gridLines } from "../src/drawing_room/static/js/paper.js";
 
 test("the default sheet is exactly the reference frame", () => {
   assert.deepEqual(sheetRect("frame"), [0, 0, FRAME_W, FRAME_H]);
@@ -34,4 +34,13 @@ test("grid lines every 50 units, every fifth major, coarser when zoomed far out"
   assert.deepEqual(lines.major.y, [0]);
   assert.deepEqual(lines.minor.y, [50, 100]);
   assert.equal(gridLines([0, 0, 5000, 5000], 0.1).step, 250); // 50 units would be 5 px apart
+});
+
+test("a layer picture zooms onto that layer's own strokes, with a margin", () => {
+  assert.equal(fitBoxes([], 100, 50), null);
+  const { scale, dx, dy } = fitBoxes([{ x0: 400, y0: 300, x1: 600, y1: 400 }, null], 100, 50, { margin: 0 });
+  assert.equal(scale, 0.5); // 200 x 100 units fill 100 x 50 px
+  assert.deepEqual([400 * scale + dx, 300 * scale + dy, 600 * scale + dx, 400 * scale + dy], [0, 0, 100, 50]);
+  const dot = fitBoxes([{ x0: 10, y0: 10, x1: 11, y1: 11 }], 100, 50, { margin: 0, minSpan: 80 });
+  assert.equal(dot.scale, 100 / 80); // a dot is not blown up to fill the card
 });
