@@ -498,6 +498,9 @@ function drawRuler() {
   ctx.restore();
 }
 
+/** The paper: a soft off-white, easier on the eyes than pure white (the top bar matches it). */
+const PAPER_COLOR = "#f5f5f2";
+
 /** The squared grid over the whole screen, in paper space, so it pans, zooms and turns with the drawing. */
 function drawGrid() {
   const rect = canvas.getBoundingClientRect();
@@ -507,7 +510,7 @@ function drawGrid() {
   const { scale } = state.view;
   const lines = gridLines(box, scale);
   ctx.lineWidth = 1 / scale;
-  for (const [kind, color] of [["minor", "rgba(30, 40, 60, 0.07)"], ["major", "rgba(30, 40, 60, 0.13)"]]) {
+  for (const [kind, color] of [["minor", "rgba(80, 105, 150, 0.10)"], ["major", "rgba(80, 105, 150, 0.19)"]]) {
     ctx.strokeStyle = color;
     ctx.beginPath();
     for (const gx of lines[kind].x) { ctx.moveTo(gx, box[1]); ctx.lineTo(gx, box[3]); }
@@ -531,8 +534,8 @@ function render() {
   state.dirty = false;
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  // White paper with no edge, all the way across: draw anywhere. The sheet only frames the view and what Claude sees.
-  ctx.fillStyle = "#ffffff";
+  // Off-white paper with no edge, all the way across: draw anywhere. The sheet only frames the view and what Claude sees.
+  ctx.fillStyle = PAPER_COLOR;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const { x, y, scale, rotation } = state.view;
   const c = Math.cos(rotation) * scale, s = Math.sin(rotation) * scale;
@@ -1041,7 +1044,7 @@ function layerThumb(layer) {
   const canvas = cached?.canvas ?? Object.assign(document.createElement("canvas"), { width: THUMB_W, height: THUMB_H });
   const g = canvas.getContext("2d");
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.fillStyle = "#ffffff";
+  g.fillStyle = PAPER_COLOR;
   g.fillRect(0, 0, THUMB_W, THUMB_H);
   const [x0, y0, x1, y1] = area;
   const scale = Math.min(THUMB_W / (x1 - x0), THUMB_H / (y1 - y0));

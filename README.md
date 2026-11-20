@@ -64,7 +64,7 @@ tablet in over USB OTG and open the `--lan` address in Chrome.
   work. New (named straight away), open any project from the list, rename it, or delete it. Changes save themselves
   about a second after you stop, and a copy kept in the browser covers a reload or a closed tab before that. A drawing
   from before projects becomes "My first drawing".
-- **Paper**: white paper edge to edge, with no border: draw anywhere. A squared grid (a line every 50 units, darker
+- **Paper**: soft off-white paper edge to edge, with no border: draw anywhere. A squared grid (a line every 50 units, darker
   every 250) moves, zooms and turns with the drawing; turn it on or off with the grid button in the top bar or **G**.
   The sheet shape in the project menu (🗂 → Paper: 4:3, which is the reference frame, A4 landscape or portrait, square,
   16:9 or 9:16) sets what the view fits to. Claude sees that sheet plus anything you drew past it. The reference and

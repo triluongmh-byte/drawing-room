@@ -85,18 +85,18 @@ with sync_playwright() as p:
       const d = c.getContext('2d').getImageData(Math.round(sx * k) - 3, Math.round(sy * k), 7, 1).data;
       let m = 255; for (let i = 0; i < d.length; i += 4) m = Math.min(m, d[i]); return m; }"""
     on_line = mac.evaluate(STRIP, [250, 120])
-    check(200 < on_line < 255, f"a faint grid line at x 250: {on_line}")
+    check(180 < on_line < 240, f"a faint grid line at x 250: {on_line}")
     mac.click("#grid-toggle")
     mac.wait_for_timeout(100)
     corner = mac.evaluate("""() => [...document.getElementById('paper').getContext('2d').getImageData(3, 3, 1, 1).data]""")
-    check(corner[:3] == [255, 255, 255], f"with the grid off, even the screen corner is white paper: {corner}")
-    check(mac.evaluate(STRIP, [250, 120]) == 255, "the grid line is gone")
+    check(corner[:3] == [245, 245, 242], f"with the grid off, even the screen corner is the off-white paper: {corner}")
+    check(mac.evaluate(STRIP, [250, 120]) == 245, "the grid line is gone")
     mac.keyboard.press("g")
     check(mac.evaluate("() => window.drawingRoom.state.grid") is True, "G brings the grid back")
     # The paper has no edge: a stroke running past the sheet still shows.
     mac.evaluate(DRAW, {"points": [[x, 700] for x in range(900, 1100, 5)]})
     mac.wait_for_timeout(100)
-    check(mac.evaluate(PIXEL, [1060, 700])[:3] != [255, 255, 255], "a stroke past the sheet's edge is drawn")
+    check(mac.evaluate(PIXEL, [1060, 700])[:3] != [245, 245, 242], "a stroke past the sheet's edge is drawn")
     mac.keyboard.press("Meta+z" if sys.platform == "darwin" else "Control+z")
     mac.wait_for_timeout(100)
     mac.click("#project-button")
