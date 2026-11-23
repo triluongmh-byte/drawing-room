@@ -1,4 +1,4 @@
-// The drawing room UI: paper, tools, layers, references, levels, scoring and the coach.
+// The Sketchbook Club UI: paper, tools, layers, references, levels, scoring and the coach.
 
 import { getJSON, postJSON, setUnauthorisedHandler } from "./api.js";
 import { downloadSheet, exportFileName } from "./export.js";
@@ -185,10 +185,10 @@ function saveProjectFile() {
 /** Load a project file as a new project. A bare drawing (no wrapper) is accepted too. */
 async function openProjectFile(file) {
   let data;
-  try { data = JSON.parse(await file.text()); } catch { throw new Error(`${file.name} is not a drawing-room file.`); }
+  try { data = JSON.parse(await file.text()); } catch { throw new Error(`${file.name} is not a Sketchbook Club file.`); }
   const drawing = data?.format === FILE_FORMAT ? data.drawing : data;
   if (!drawing || typeof drawing !== "object" || !Array.isArray(drawing.layers ?? drawing.strokes)) {
-    throw new Error(`${file.name} is not a drawing-room file.`);
+    throw new Error(`${file.name} is not a Sketchbook Club file.`);
   }
   const name = (typeof data?.name === "string" && data.name) || file.name.replace(/(\.drawing)?\.json$/i, "");
   await newProject({ name, drawing });

@@ -117,7 +117,7 @@ with sync_playwright() as p:
     page.click("#project-button")
     page.set_input_files("#file-input", str(bad))
     page.wait_for_timeout(400)
-    check("not a drawing-room file" in page.text_content("#paper-hint"), "a wrong file says so")
+    check("not a Sketchbook Club file" in page.text_content("#paper-hint"), "a wrong file says so")
     page.keyboard.press("Escape")
     page.click("#project-button")
     page.screenshot(path=str(OUT / "project-menu.png"))

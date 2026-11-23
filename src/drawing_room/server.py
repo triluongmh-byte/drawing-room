@@ -456,7 +456,7 @@ def serve(port: int = DEFAULT_PORT, lan: bool = False, pin: bool = False, data: 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     server = create_server(port, lan, pin=pin, data=data)
     actual = server.server_address[1]
-    print(f"drawing-room: http://127.0.0.1:{actual}", flush=True)
+    print(f"Sketchbook Club: http://127.0.0.1:{actual}", flush=True)
     if lan:
         for address in lan_addresses():
             print(f"  on your Wi-Fi: http://{address}:{actual}", flush=True)

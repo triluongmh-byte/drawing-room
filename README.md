@@ -1,10 +1,10 @@
-# ✏️ drawing-room
+# ✏️ Sketchbook Club
 
 **A local sketchbook with a drawing teacher in it.** Draw by hand with real pen pressure and tilt (Apple Pencil on an
 iPad, or a Wacom / XP-Pen / Huion tablet), and ask Claude to explain, correct or construct things for you, right on
 the paper: a two-point perspective box built step by step, with every step numbered and labelled where it happens.
 
-![Claude draws a two-point perspective box on its own layers and labels each step on the drawing](docs/screenshots/20-claude-perspective.png)
+![Claude draws a two-point perspective box on its own layers and labels each step on the drawing](docs/screenshots/claude-perspective-steps.png)
 
 - 🖊️ **A real pen**: pressure and tilt straight from the browser, so the iPad only needs Safari. A pencil with grain, ink, marker, brush,
   shading, highlighter and dragged-out shapes.
@@ -40,24 +40,24 @@ needs no internet. Claude needs the computer to reach it.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/21-clean-box.png" alt="The same box with Claude's Sketch layer hidden"><br><sub><b>Construction you can switch off.</b> Claude draws in four line weights on separate layers. Hide its Sketch layer and a clean box is left.</sub></td>
-    <td width="50%"><img src="docs/screenshots/22-notes-and-pictures.png" alt="Numbered notes pinned on the drawing and a picture attached in the chat"><br><sub><b>Ask about a spot.</b> Pin numbered notes on the paper (N) and attach pictures. They go with your next message, and Claude answers each note by number.</sub></td>
+    <td width="50%"><img src="docs/screenshots/claude-clean-box.png" alt="The same box with Claude's Sketch layer hidden"><br><sub><b>Construction you can switch off.</b> Claude draws in four line weights on separate layers. Hide its Sketch layer and a clean box is left.</sub></td>
+    <td width="50%"><img src="docs/screenshots/notes-and-pictures.png" alt="Numbered notes pinned on the drawing and a picture attached in the chat"><br><sub><b>Ask about a spot.</b> Pin numbered notes on the paper (N) and attach pictures. They go with your next message, and Claude answers each note by number.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/23-toolbox-shapes.png" alt="The Shapes flyout with dashed lines"><br><sub><b>Toolbox.</b> Write, Paint and Shapes each open a flyout with their tools, colours and size. Shapes come solid or dashed.</sub></td>
-    <td><img src="docs/screenshots/11-pencil.png" alt="Pencil pressure, tilted shading and colour"><br><sub><b>A pencil that behaves like one.</b> Press harder for a darker line, and tilt the pen for grainy shading.</sub></td>
+    <td><img src="docs/screenshots/toolbox-shapes.png" alt="The Shapes flyout with dashed lines"><br><sub><b>Toolbox.</b> Write, Paint and Shapes each open a flyout with their tools, colours and size. Shapes come solid or dashed.</sub></td>
+    <td><img src="docs/screenshots/pencil.png" alt="Pencil pressure, tilted shading and colour"><br><sub><b>A pencil that behaves like one.</b> Press harder for a darker line, and tilt the pen for grainy shading.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/09-layers.png" alt="The layers strip"><br><sub><b>Layers.</b> A strip of cards that show what is on each layer. Hide, lock, set opacity, reorder, and ★ the ones that count in practice.</sub></td>
-    <td><img src="docs/screenshots/10-ruler.png" alt="The ruler on the paper"><br><sub><b>Ruler.</b> Run a stroke along it to draw straight. Turn it in 15° steps or type an exact angle.</sub></td>
+    <td><img src="docs/screenshots/layers-strip.png" alt="The layers strip"><br><sub><b>Layers.</b> A strip of cards that show what is on each layer. Hide, lock, set opacity, reorder, and ★ the ones that count in practice.</sub></td>
+    <td><img src="docs/screenshots/ruler.png" alt="The ruler on the paper"><br><sub><b>Ruler.</b> Run a stroke along it to draw straight. Turn it in 15° steps or type an exact angle.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/02-level1-cube-next-step.png" alt="Guided tracing of a cube"><br><sub><b>Practice: trace, guided.</b> A step list for each reference, with the next step named after every stroke.</sub></td>
-    <td><img src="docs/screenshots/05-level3-squashed.png" alt="Missed and stray regions boxed after scoring"><br><sub><b>Scored, not guessed.</b> Shape and proportion out of 10, with missed (M) and stray (S) regions boxed.</sub></td>
+    <td><img src="docs/screenshots/practice-guided-cube.png" alt="Guided tracing of a cube"><br><sub><b>Practice: trace, guided.</b> A step list for each reference, with the next step named after every stroke.</sub></td>
+    <td><img src="docs/screenshots/practice-score.png" alt="Missed and stray regions boxed after scoring"><br><sub><b>Scored, not guessed.</b> Shape and proportion out of 10, with missed (M) and stray (S) regions boxed.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/07-level4-submit-review.png" alt="Claude reviews a submitted drawing"><br><sub><b>Review on submit.</b> Claude reads the numbers and the overlay, then says what to practise next.</sub></td>
-    <td><img src="docs/screenshots/13-projects.png" alt="The projects menu"><br><sub><b>Projects.</b> Every drawing saves itself on the computer and opens on the iPad too.</sub></td>
+    <td><img src="docs/screenshots/practice-review.png" alt="Claude reviews a submitted drawing"><br><sub><b>Review on submit.</b> Claude reads the numbers and the overlay, then says what to practise next.</sub></td>
+    <td><img src="docs/screenshots/projects.png" alt="The projects menu"><br><sub><b>Projects.</b> Every drawing saves itself on the computer and opens on the iPad too.</sub></td>
   </tr>
 </table>
 
