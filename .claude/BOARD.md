@@ -1,6 +1,7 @@
 # Tasks Board
 
 ## In Progress
+- **Illustrate every answer** (PR #20, feat/illustrate-every-answer): Claude answers and draws an illustration every time; each illustration on its own layer named after it.
 - **Rename to Sketchbook Club** (chore/rename-sketchbook-club): the name people see (page title, README, CLI help, startup line); the command, package, data folder and file format stay `drawing-room`. Also lands the screenshot rename that missed PR #15.
 
 ## Ready for Deploy
