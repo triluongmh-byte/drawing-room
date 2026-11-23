@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   MAX_NAME, canDraw, cleanName, createDocument, createLayer, createReferenceState, getLayer, nextLayerName,
   referenceVisible, restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
+ uniqueLayerName,
 } from "../src/drawing_room/static/js/layers.js";
 
 test("a new drawing has Sketch, Line and Color, bottom to top; Color is not scored", () => {
@@ -84,4 +85,15 @@ test("unreadable saves give a fresh drawing; duplicate layer ids are dropped", (
   assert.equal(restoreDocument({ layers: [] }).layers.length, 3);
   const doc = restoreDocument({ layers: [{ id: "x", name: "A" }, { id: "x", name: "B" }, { name: "no id" }] });
   assert.deepEqual(doc.layers.map((l) => l.name), ["A"]);
+});
+
+test("each illustration gets its own layer name: numbered when the name is taken, within 24 characters", () => {
+  assert.equal(uniqueLayerName("Hộp 2 điểm tụ", ["Sketch", "Line"]), "Hộp 2 điểm tụ");
+  assert.equal(uniqueLayerName("Hộp 2 điểm tụ", ["Hộp 2 điểm tụ"]), "Hộp 2 điểm tụ 2");
+  assert.equal(uniqueLayerName("Hộp 2 điểm tụ", ["Hộp 2 điểm tụ", "Hộp 2 điểm tụ 2"]), "Hộp 2 điểm tụ 3");
+  const long = "Bóng đổ của khối hộp dưới đèn";
+  const first = uniqueLayerName(long, []);
+  assert.equal(first.length, 24);
+  const second = uniqueLayerName(long, [first]);
+  assert.ok(second.length <= 24 && second.endsWith(" 2"), second);
 });
