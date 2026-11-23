@@ -8,7 +8,7 @@ import { hydrateIcons, icon } from "./icons.js";
 import { classifyPointer, createInputState } from "./input.js";
 import {
   MAX_LAYERS, allStrokes, canDraw, createDocument, createReferenceState, getLayer, layerIndex, referenceVisible,
-  restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring,
+  restoreDocument, serializeDocument, setLayerOpacity, setReferenceOpacity, strokesForScoring, uniqueLayerName,
 } from "./layers.js";
 import { initPanels } from "./panels.js";
 import { DEFAULT_PAPER, PAPERS, drawingBounds, fitBoxes, gridLines, paperId, sheetRect } from "./paper.js";
@@ -1884,6 +1884,19 @@ function ensureClaudeLayer(name = null, { busy = new Set(), emptying = new Set()
   return layer;
 }
 
+/**
+ * Each illustration gets a layer of its own named after it, so earlier ones stay put. A name already used by a layer
+ * with strokes on it (that this answer is not emptying) becomes "name 2", "name 3"…
+ */
+function asNewIllustration(drawn, illustration, emptying) {
+  const doc = state.history.doc;
+  const known = getLayer(doc, state.claudeLayers[illustration]);
+  const reusable = known && (!known.strokes.length || emptying.has(known.id));
+  const name = reusable ? illustration
+    : uniqueLayerName(illustration, [...Object.keys(state.claudeLayers), ...doc.layers.map((layer) => layer.name)]);
+  return drawn.map((shape) => ({ ...shape, layer: name }));
+}
+
 /** Ids of every layer Claude has drawn on that still exists. */
 function claudeLayerIds() {
   return [state.claudeLayer, ...Object.values(state.claudeLayers)].filter((id) => id && getLayer(state.history.doc, id));
@@ -1955,7 +1968,8 @@ async function sendChat() {
     if (answer.strokes.length || answer.clear_previous) {
       // Starting over empties every layer of Claude's, in the same undo step as the new drawing.
       const replace = answer.clear_previous ? claudeLayerIds() : [];
-      const { strokes, full } = claudeStrokes(answer.strokes, new Set(replace));
+      const drawn = answer.illustration ? asNewIllustration(answer.strokes, answer.illustration, new Set(replace)) : answer.strokes;
+      const { strokes, full } = claudeStrokes(drawn, new Set(replace));
       if (strokes.length || replace.length) {
         state.history.addMany(strokes, { replace });
         afterChange();

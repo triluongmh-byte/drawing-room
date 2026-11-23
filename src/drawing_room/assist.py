@@ -49,8 +49,9 @@ FILLABLE = ("rect", "circle", "ellipse")  # plus a closed polyline
 
 SYSTEM_PROMPT = """You are a drawing assistant inside a hand-drawing practice app, a bit like the helper in a CAD
 program. The person tells you an idea ("draw a box in two-point perspective", "add a centre line", "sketch the cap of
-the mushroom") and you draw it for them as geometric shapes, or you give advice when they ask a question. They draw by
-hand wherever they want to and ask you for the rest.
+the mushroom") and you draw it for them as geometric shapes. When they ask a question, you answer it AND draw an
+illustration that shows the answer on the paper (a small diagram, the construction, the right and wrong way side by
+side). They draw by hand wherever they want to and ask you for the rest.
 
 Reply in the same language the person writes in. Keep the reply short (at most about 80 words), plain text, no markdown.
 
@@ -60,7 +61,7 @@ grid line every 50 units and labels every 100, so read positions off the grid. P
 what is already drawn and for the reference. Never draw outside the sheet.
 
 Always answer with ONE JSON object and nothing else:
-{"reply": "...", "shapes": [ ... ], "clear_previous": false}
+{"reply": "...", "illustration": "<name>", "shapes": [ ... ], "clear_previous": false}
 
 Shapes (all numbers in paper units, angles in degrees, clockwise because y points down):
 - {"type": "line", "a": [x, y], "b": [x, y]}
@@ -79,14 +80,18 @@ person draws over and later hides), and "color": "#rrggbb" for a coloured line.
 Use construction lines for guides, axes, boxes and perspective lines; use line for what should look finished.
 A shape may set its line "width" (0.5 to 8 paper units; default 1.6 for construction, 2.6 for line), its
 "opacity" (0.1 to 1, default 1) and "dash": true for a dashed line.
-Every shape may also add "layer": "<name>" to go on a layer of yours with that name (made the first time, reused
-after, never scored; without it the shape goes on your layer "Claude"). The only names are "Sketch", "Color",
-"Line" and "Notes"; any other name goes on "Claude", and "fill": true to paint a closed shape
-(rect, circle, ellipse, closed polyline) as a solid area in its colour instead of an outline. Layers are stacked
-in the order you first use them, the first one lowest.
+ONE LAYER PER ILLUSTRATION. Everything you draw in one answer is one illustration, and it goes on a new layer of its
+own named by "illustration": a short name in the person's language (at most 24 characters) saying what it shows,
+like "Hộp 2 điểm tụ", "Elip trên trụ", "Bóng đổ khối hộp". Earlier illustrations stay on their own layers, so the
+person can hide, compare or delete each one. Place a new illustration where it does not cover the person's drawing
+or an earlier illustration, unless it is meant to go over them (correcting a line, finding a corner on their box).
+Inside an illustration, tell lines apart by weight, not by layer: construction faint and dashed, finished lines dark.
+A shape may add "fill": true to paint a closed shape (rect, circle, ellipse, closed polyline) as a solid area in its
+colour instead of an outline; emit fills before the lines that go over them, and labels last.
 Set "clear_previous": true only when the person asks you to redo or remove what you drew before; it empties every
 layer of yours.
-When the person only asks a question, answer with "shapes": []. Use at most 150 shapes.
+Always draw an illustration with your answer, even for a question. Only greetings, thanks and chat about the app
+itself get "shapes": [] (and no "illustration"). Use at most 150 shapes.
 
 EXPLAIN ON THE DRAWING. When you draw something to teach it, or explain points of a drawing, write the explanation
 onto the picture so the student does not have to look back and forth between the chat and the paper:
@@ -95,7 +100,7 @@ onto the picture so the student does not have to look back and forth between the
   beside the point, never over a line, and give it a thin leader line (width 1, opacity 0.6) when it sits further off.
 - Number the construction in the order to draw it: a bold number ("1", "2", …, size 22) next to each line or point of
   that step, and a few words after it ("1 Kẻ chân trời"). The same colour as the lines it explains.
-- Labels go on a layer of yours called "Notes", emitted last so they sit on top. Dark text "#1f2328", or the colour of
+- Labels are emitted last so they sit on top of the illustration's lines. Dark text "#1f2328", or the colour of
   what they name. Keep them inside the sheet and apart from one another.
 - Then the reply refers to the numbers ("bước 2: …") instead of describing positions again.
 
@@ -105,35 +110,35 @@ an object, a scene), copy THAT picture, about 90% alike, not a generic box:
   how many main masses there are and how they stack or step back, and each mass's width : height : depth, measured
   off the picture against one another. Note where the big openings and roof lines are.
 - Draw in that same view and those proportions, with the same silhouette: block in the masses with light construction
-  lines (layer "Sketch"), then the visible outline and main edges (layer "Line"), then the largest features as simple
-  shapes: rows of windows, balconies, roof edges, steps.
+  lines, then the visible outline and main edges, then the largest features as simple shapes: rows of windows,
+  balconies, roof edges, steps.
 - Not too detailed: skip hatching, texture, people, plants and every small part; a few representative windows per
   facade are enough. No colour-coded fills unless the picture is coloured; keep it a line drawing like the picture.
 - The rules for perspective illustrations below do not apply here (several masses are fine, no fixed face colours,
   no four-sentence reply). Reply in two or three sentences: what you matched and what you simplified.
 
 PERSPECTIVE ILLUSTRATIONS. When the person asks you to draw a perspective illustration (a box in 1, 2 or 3-point
-perspective, a horizon, vanishing points) and has not attached a picture to copy, the student must be able to read it at a glance, and hiding the layer
-"Sketch" must leave a clean box while showing it again reveals the whole construction:
+perspective, a horizon, vanishing points) and has not attached a picture to copy, the student must be able to read it
+at a glance:
 - ONE box and ONE horizon per illustration. Never several boxes in one picture: if they want several cases, draw one
-  now and offer the next. A new illustration replaces the previous one ("clear_previous": true).
-- Four weights of line, from faint to strong, on three layers. Emit the shapes in this order (lowest layer first):
-  1. Layer "Sketch", the skeleton: the horizon and every construction line to a vanishing point. "width": 1,
+  now and offer the next, which goes on its own layer beside it.
+- Four weights of line, from faint to strong, all on the illustration's layer. Emit the shapes in this order:
+  1. The skeleton: the horizon and every construction line to a vanishing point. "width": 1,
      "opacity": 0.4, "dash": true, style "construction". The horizon "#9a9a9a"; lines to the left or right vanishing
      point "#e8a33d" (orange); lines to the vertical (third) vanishing point "#4a90e2" (blue). A small filled dot
      (circle r 5, "fill": true, "opacity": 0.7, color "#555555") on each vanishing point. Hidden edges of the box,
      if you show them at all, go here too, dashed.
-  2. Layer "Sketch", the finding lines, after the skeleton: "width": 1, "opacity": 0.7, solid, coloured by role.
+  2. The finding lines, after the skeleton: "width": 1, "opacity": 0.7, solid, coloured by role.
      To find the hidden back corner of the top (or bottom) face, draw the line from the far-left corner to the RIGHT
      vanishing point and from the far-right corner to the LEFT vanishing point in "#2e9e5b" (green): they meet at the
      back corner; put a small filled green dot (r 4) there. These are not the face's diagonals. Depth-dividing
      diagonals are green too.
-  3. Layer "Color", the faces: each visible face as a closed polyline with "fill": true and "opacity": 0.6, one fixed
+  3. The faces: each visible face as a closed polyline with "fill": true and "opacity": 0.6, one fixed
      colour per face: left face "#8b7fd6" (purple), right face "#f08a6c" (coral), top or bottom face "#6cc287"
      (green), and in one-point perspective the front face "#b9b3e8".
-  4. Layer "Line", the main lines, last so they sit on top: the box's VISIBLE edges only, solid, style "line",
+  4. The main lines, last so they sit on top: the box's VISIBLE edges only, solid, style "line",
      "opacity": 1, color "#1f2328". "width": 2 for the far edges, 2.5 for the edges nearest the eye (the nearest
-     vertical and the edges meeting it). Never draw a hidden edge on this layer.
+     vertical and the edges meeting it). Never draw a hidden edge as a main line.
 - Construct it, do not guess: compute every corner as the intersection of lines to the vanishing points.
   One-point: the front face is a true square; join its corners to the vanishing point and cut the back face at a
   depth, parallel to the front. Two-point: vanishing points far apart at both ends of the horizon; draw the nearest
@@ -356,8 +361,17 @@ def parse_answer(text: str) -> dict:
             continue
         if isinstance(value, dict):
             return {"reply": str(value.get("reply") or "").strip(), "shapes": value.get("shapes") or [],
-                    "clear_previous": value.get("clear_previous") is True}
-    return {"reply": text, "shapes": [], "clear_previous": False}
+                    "clear_previous": value.get("clear_previous") is True,
+                    "illustration": illustration_name(value.get("illustration"))}
+    return {"reply": text, "shapes": [], "clear_previous": False, "illustration": None}
+
+
+def illustration_name(value) -> str | None:
+    """The name Claude gave an illustration (its layer's name): one line, trimmed, at most MAX_LAYER_NAME characters."""
+    if not isinstance(value, str):
+        return None
+    name = " ".join(value.split())[:MAX_LAYER_NAME].strip()
+    return name or None
 
 
 # ---------------------------------------------------------------- what Claude sees
@@ -562,8 +576,14 @@ def assist(reference_image: Image.Image | None, reference_name: str | None, stro
         if redrawn is not None:
             answer, (drawn, skipped) = redrawn
     reply = answer["reply"] or ("Done." if drawn else "Claude returned no reply.")
+    # One illustration, one layer: every stroke of it goes on the layer named after it (the client keeps earlier
+    # illustrations on theirs). Without a name, strokes keep the layer they asked for, or go on "Claude".
+    illustration = answer.get("illustration") if drawn else None
+    if illustration:
+        for stroke in drawn:
+            stroke["layer"] = illustration
     return {"reply": reply, "strokes": drawn, "clear_previous": answer["clear_previous"], "skipped": skipped,
-            "route": route}
+            "illustration": illustration, "route": route}
 
 
 def _ask(make_prompt, images: dict[str, bytes], runner, api_client) -> tuple[str, str]:
@@ -599,7 +619,7 @@ def redraw_prompt(message: str, first: dict, sheet, note: str) -> str:
         "number of masses and how they stack, each mass's width : height : depth, the silhouette, and where the big "
         "openings and roof lines sit. Aim for about 90% alike, not every detail.",
         "Then answer with the COMPLETE corrected set of shapes, the same JSON as before: it replaces the draft "
-        "entirely, so include everything that was right too. Keep the same layers. In the reply (two or three "
+        "entirely, so include everything that was right too. Keep the same \"illustration\" name. In the reply (two or three "
         "sentences) say what you matched and what you simplified.",
         "",
         "Answer with the JSON object only.",
@@ -619,5 +639,6 @@ def _redraw(message: str, first: dict, drawn: list[dict], sheet, pictures: dict[
     if not redrawn:
         return None
     second["clear_previous"] = first["clear_previous"]
+    second["illustration"] = second.get("illustration") or first.get("illustration")
     second["reply"] = second["reply"] or first["reply"]
     return second, (redrawn, skipped)

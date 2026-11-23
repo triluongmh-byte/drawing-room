@@ -129,3 +129,18 @@ export function restoreDocument(saved) {
   }
   return doc;
 }
+
+/**
+ * A name for a new illustration's layer: `base` itself when no layer is called that, else "base 2", "base 3"…,
+ * cut so the whole name stays within `max` characters.
+ */
+export function uniqueLayerName(base, taken, max = 24) {
+  const names = new Set(taken);
+  const name = String(base).slice(0, max);
+  if (!names.has(name)) return name;
+  for (let n = 2; ; n++) {
+    const suffix = ` ${n}`;
+    const candidate = `${String(base).slice(0, max - suffix.length).trimEnd()}${suffix}`;
+    if (!names.has(candidate)) return candidate;
+  }
+}

@@ -67,8 +67,9 @@ def test_parse_answer_reads_json_fenced_or_bare_and_falls_back_to_text():
     bare = assist.parse_answer('{"reply": "Đây", "shapes": [{"type": "circle", "c": [1, 2], "r": 3}]}')
     assert bare["reply"] == "Đây" and len(bare["shapes"]) == 1 and bare["clear_previous"] is False
     fenced = assist.parse_answer('Sure!\n```json\n{"reply": "ok", "shapes": [], "clear_previous": true}\n```')
-    assert fenced == {"reply": "ok", "shapes": [], "clear_previous": True}
-    assert assist.parse_answer("just words") == {"reply": "just words", "shapes": [], "clear_previous": False}
+    assert fenced == {"reply": "ok", "shapes": [], "clear_previous": True, "illustration": None}
+    assert assist.parse_answer("just words") == {"reply": "just words", "shapes": [], "clear_previous": False,
+                                                 "illustration": None}
 
 
 def test_sheet_falls_back_to_the_frame():
@@ -208,8 +209,8 @@ def test_shapes_can_name_a_layer_and_fill_closed_shapes():
 
 
 def test_the_prompt_teaches_the_perspective_layers():
-    for words in ['Layer "Sketch"', 'Layer "Color"', 'Layer "Line"', "ONE box", "clean box", "VISIBLE edges", "four short sentences",
-                  "the back corner"]:
+    for words in ["The skeleton", "The finding lines", "The faces", "The main lines", "ONE box", "VISIBLE edges",
+                  "four short sentences", "the back corner"]:
         assert words in assist.SYSTEM_PROMPT
 
 
@@ -277,7 +278,7 @@ def test_labels_are_real_text_with_a_checked_size_and_alignment():
 
 
 def test_the_prompt_asks_for_explanations_on_the_drawing():
-    for words in ['"type": "label"', "EXPLAIN ON THE DRAWING", 'layer of yours called "Notes"']:
+    for words in ['"type": "label"', "EXPLAIN ON THE DRAWING", "Labels are emitted last"]:
         assert words in assist.SYSTEM_PROMPT, words
 
 
@@ -347,3 +348,38 @@ def test_the_prompt_copies_pictures_instead_of_drawing_the_demo_box():
     assert "DRAWING FROM A PICTURE" in prompt and "90% alike" in prompt
     assert prompt.index("DRAWING FROM A PICTURE") < prompt.index("PERSPECTIVE ILLUSTRATIONS")
     assert "has not attached a picture to copy" in prompt
+
+
+def test_every_answer_illustrates_on_a_layer_of_its_own():
+    prompt = assist.SYSTEM_PROMPT
+    assert "ONE LAYER PER ILLUSTRATION" in prompt and '"illustration": "<name>"' in prompt
+    assert "Always draw an illustration with your answer, even for a question" in prompt
+    assert 'answer with "shapes": []. Use' not in prompt  # questions are no longer answered without a drawing
+
+
+def test_the_illustration_name_puts_every_shape_on_its_layer():
+    text = json.dumps({"reply": "Elip nằm ngang.", "illustration": "  Elip   trên trụ  ", "shapes": [
+        {"type": "ellipse", "c": [500, 300], "rx": 120, "ry": 40, "layer": "Line"},
+        {"type": "line", "a": [380, 300], "b": [380, 500], "layer": "Tia"},
+        {"type": "label", "at": [520, 250], "text": "1 Elip"}]})
+    answer = assist.assist(None, None, [], None, 2, "vẽ trụ sao cho đúng?", runner=TwoAnswers(text))
+    assert answer["illustration"] == "Elip trên trụ"
+    assert {stroke["layer"] for stroke in answer["strokes"]} == {"Elip trên trụ"}
+
+
+def test_no_illustration_name_without_a_drawing_and_names_are_trimmed():
+    answer = assist.assist(None, None, [], None, 2, "cảm ơn thầy",
+                           runner=TwoAnswers(json.dumps({"reply": "Không có gì!", "illustration": "X", "shapes": []})))
+    assert answer["illustration"] is None and answer["strokes"] == []
+    assert assist.illustration_name("a" * 40) == "a" * assist.MAX_LAYER_NAME
+    assert assist.illustration_name(["no"]) is None and assist.illustration_name("   ") is None
+
+
+def test_the_redraw_keeps_the_illustration_name():
+    first = json.dumps({"reply": "Draft.", "illustration": "Nhà 2 khối",
+                        "shapes": [{"type": "rect", "x": 100, "y": 100, "w": 200, "h": 100}]})
+    second = json.dumps({"reply": "Fixed.", "shapes": [{"type": "rect", "x": 100, "y": 100, "w": 200, "h": 300}]})
+    answer = assist.assist(None, None, [], None, 2, "vẽ giống hình", runner=TwoAnswers(first, second),
+                           attachments=[_picture()])
+    assert answer["reply"] == "Fixed." and answer["illustration"] == "Nhà 2 khối"
+    assert {stroke["layer"] for stroke in answer["strokes"]} == {"Nhà 2 khối"}
