@@ -1,9 +1,9 @@
 # Tasks Board
 
 ## In Progress
-- **Board + README tidy-up** (chore/cleanup-board-readme): fresh practice screenshots, unused pictures removed, browser checks write to a temp folder.
 
 ## Ready for Deploy
+- **Board + README tidy-up** (PR #15, merged): fresh practice screenshots, unused pictures removed, every picture renamed so no cached old one shows, browser checks write to a temp folder on a throwaway server.
 - **README rewrite** (PR #14, merged): new light-UI screenshots, a tour, Claude-as-teacher section, tools and keyboard tables.
 - **Claude explains on the drawing + layer thumbnails** (PR #13, merged): real text labels and numbered steps on a "Notes" layer; layer cards zoom onto their own strokes.
 - **Notes for Claude** (PR #12, merged): Note tool (N) pins numbered questions on the paper; they go with the next chat message, with their spot, and show as pins in what Claude sees.
