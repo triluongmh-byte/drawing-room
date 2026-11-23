@@ -1,11 +1,13 @@
 # Tasks Board
 
 ## In Progress
-- **Bring back export, project files, paint bucket, colour picker** (PR #18, feat/restore-export-fill): lost when they were pushed after PR #5 merged.
-- **Draw from a picture** (feat/draw-from-picture): Claude copies an attached picture (~90%), looks again and redraws; only Sketch/Color/Line/Notes layers; never drops strokes when 24 layers are full.
+- **Illustrate every answer** (PR #20, feat/illustrate-every-answer): Claude answers and draws an illustration every time; each illustration on its own layer named after it.
+- **Rename to Sketchbook Club** (chore/rename-sketchbook-club): the name people see (page title, README, CLI help, startup line); the command, package, data folder and file format stay `drawing-room`. Also lands the screenshot rename that missed PR #15.
 
 ## Ready for Deploy
-- **Board + README tidy-up** (PR #15, merged): fresh practice screenshots, unused pictures removed, every picture renamed so no cached old one shows, browser checks write to a temp folder on a throwaway server.
+- **Bring back export, project files, paint bucket, colour picker** (PR #18, merged): Save/Open .drawing.json, PNG/JPG export, ⌘S, bucket (F), picker (K). They were lost when pushed after PR #5 merged.
+- **Draw from a picture** (PR #17, merged): Claude copies an attached picture (~90%), looks again and redraws; only Sketch/Color/Line/Notes layers; never drops strokes when 24 layers are full.
+- **Board + README tidy-up** (PR #15, merged): fresh practice screenshots, unused pictures removed, browser checks write to a temp folder on a throwaway server. (The screenshot rename was pushed after it merged; it lands with the Sketchbook Club rename.)
 - **README rewrite** (PR #14, merged): new light-UI screenshots, a tour, Claude-as-teacher section, tools and keyboard tables.
 - **Claude explains on the drawing + layer thumbnails** (PR #13, merged): real text labels and numbered steps on a "Notes" layer; layer cards zoom onto their own strokes.
 - **Notes for Claude** (PR #12, merged): Note tool (N) pins numbered questions on the paper; they go with the next chat message, with their spot, and show as pins in what Claude sees.

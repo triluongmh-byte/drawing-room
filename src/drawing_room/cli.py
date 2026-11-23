@@ -10,7 +10,7 @@ from drawing_room.server import DEFAULT_PORT, serve
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="drawing-room", description="A local practice room for drawing by hand.")
+    parser = argparse.ArgumentParser(prog="drawing-room", description="Sketchbook Club: a local sketchbook for drawing by hand, with Claude as the teacher.")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("serve", help="start the web app")
     run.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port to listen on (default {DEFAULT_PORT})")
