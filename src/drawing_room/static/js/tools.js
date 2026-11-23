@@ -12,6 +12,10 @@ export const TOOLS = {
   highlighter: { label: "Highlighter", color: "#ffd43b", size: 20, min: 6, max: 60, opacity: 0.4, thinning: 0, smoothing: 0.7, streamline: 0.55, blend: "multiply" },
   // Lines, boxes, ellipses and the rest, dragged out: an even, opaque line like a fine marker.
   shape: { label: "Shape", color: "#141312", size: 3, min: 1, max: 16, opacity: 1, thinning: 0, smoothing: 0.2, streamline: 0 },
+  // The paint bucket: its "size" is how wide a gap in the lines (paper units) it still treats as closed.
+  fill: { label: "Paint bucket", color: "#e0604a", size: 2, min: 0, max: 10, opacity: 1 },
+  // The colour picker has no size or colour of its own; it hands back to the tool used before it.
+  picker: { label: "Colour picker", size: 1, min: 1, max: 1 },
   eraser: { label: "Eraser", size: 12, min: 4, max: 60 },
 };
 
@@ -19,14 +23,14 @@ export const TOOLS = {
 export const GROUPS = {
   write: { label: "Write", tools: ["pencil", "ink", "marker"],
            palette: ["#141312", "#3b3936", "#2f6fd0", "#2e8b57", "#d9822b", "#d64545"] },
-  paint: { label: "Paint", tools: ["brush", "shade", "highlighter"],
+  paint: { label: "Paint", tools: ["brush", "shade", "highlighter", "fill"],
            palette: ["#e0604a", "#f2b636", "#ffd43b", "#4ba3c7", "#6bbf59", "#8e6cc9"] },
   // One tool; its flyout picks the shape (shapes.js) instead of a tool.
   shapes: { label: "Shapes", tools: ["shape"],
             palette: ["#141312", "#3b3936", "#2f6fd0", "#2e8b57", "#d9822b", "#d64545"] },
 };
 
-/** Tools with a colour of their own (the eraser has none). */
+/** Tools with a colour of their own (the eraser and the picker have none). */
 export const COLORED = Object.values(GROUPS).flatMap((group) => group.tools);
 
 /** The group a tool belongs to ("write", "paint"), or null for the eraser. */

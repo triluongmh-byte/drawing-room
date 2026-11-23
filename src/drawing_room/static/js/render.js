@@ -20,7 +20,26 @@ function outlineToPath(outline) {
   return path;
 }
 
+/** A paint-bucket fill's outlines as one path; holes wind the other way, so the default nonzero fill leaves them open. */
+function fillPath(outlines) {
+  const path = new Path2D();
+  for (const loop of outlines ?? []) {
+    if (loop.length < 3) continue;
+    path.moveTo(loop[0][0], loop[0][1]);
+    for (let i = 1; i < loop.length; i++) path.lineTo(loop[i][0], loop[i][1]);
+    path.closePath();
+  }
+  return path;
+}
+
+/** Within a layer, bucket fills go under its lines, as paint poured into the shapes; otherwise strokes keep their order. */
+export function paintOrder(strokes) {
+  if (!strokes.some((stroke) => stroke.tool === "fill")) return strokes;
+  return [...strokes.filter((stroke) => stroke.tool === "fill"), ...strokes.filter((stroke) => stroke.tool !== "fill")];
+}
+
 export function strokePath(stroke, { last = false } = {}) {
+  if (stroke.tool === "fill") return fillPath(stroke.outlines);
   if (stroke.text) return new Path2D(); // a label is painted as text (paintLabel)
   if (stroke.fill) {
     // A painted area (Claude's faces): the polygon through the points, filled flat.

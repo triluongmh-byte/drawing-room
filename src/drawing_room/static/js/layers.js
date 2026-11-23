@@ -76,7 +76,8 @@ export function allStrokes(doc, filter = () => true) {
 /** Strokes for scoring and the coach: visible layers only, each tagged with whether its layer is scored. */
 export function strokesForScoring(doc, serialize = (stroke) => stroke) {
   return doc.layers.filter((layer) => layer.visible)
-    .flatMap((layer) => layer.strokes.map((stroke) => ({ ...serialize(stroke), scored: layer.scored })));
+    // Bucket fills are colour, not line: they never count and the coach does not see them as strokes.
+    .flatMap((layer) => layer.strokes.filter((stroke) => stroke.tool !== "fill").map((stroke) => ({ ...serialize(stroke), scored: layer.scored })));
 }
 
 // ------------------------------------------------------------------ the reference underlay

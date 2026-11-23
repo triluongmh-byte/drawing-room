@@ -3,6 +3,7 @@
 
 export const MIN_POINT_DISTANCE = 0.75;
 
+import { insideOutlines } from "./fill.js";
 import { paintedSize } from "./pencil.js";
 
 let nextId = 1;
@@ -71,6 +72,8 @@ export function insidePolygon(points, x, y) {
  * or, for a filled area, lies inside it.
  */
 export function strokeHits(stroke, x, y, radius) {
+  // A paint-bucket fill is hit anywhere inside it.
+  if (stroke.tool === "fill") return insideOutlines(stroke.outlines ?? [], x, y);
   if (stroke.text && stroke.points.length) {
     // A label: roughly the box its text covers.
     const [lx, ly] = stroke.points[0];

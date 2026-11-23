@@ -1,6 +1,8 @@
 // The drawing room UI: paper, tools, layers, references, levels, scoring and the coach.
 
 import { getJSON, postJSON, setUnauthorisedHandler } from "./api.js";
+import { downloadSheet, exportFileName } from "./export.js";
+import { FILL_RES, fillArea, toPaper, traceOutlines } from "./fill.js";
 import { History } from "./history.js";
 import { hydrateIcons, icon } from "./icons.js";
 import { classifyPointer, createInputState } from "./input.js";
@@ -12,11 +14,12 @@ import { initPanels } from "./panels.js";
 import { DEFAULT_PAPER, PAPERS, drawingBounds, fitBoxes, gridLines, paperId, sheetRect } from "./paper.js";
 import { settlePencil } from "./pencil.js";
 import { createSaver, hasStrokes, nextProjectName, relativeTime } from "./projects.js";
-import { TOOLS, cachedPath, paintStroke, strokeOpacity, strokePath } from "./render.js";
+import { drawingColorAt, imageColorAt } from "./picker.js";
+import { TOOLS, cachedPath, paintOrder, paintStroke, strokeOpacity, strokePath } from "./render.js";
 import { SHAPES, bigEnough, shapePoints } from "./shapes.js";
 import { createRuler, dragEnd, followsRuler, hitHandle, moveRuler, projectOnto, restoreRuler, rulerAngle, rulerCenter, rulerLength, setAngle, snapsToRuler } from "./ruler.js";
 import { addPoint, createStroke, serializeStroke, strokeBounds, strokeHits } from "./strokes.js";
-import { GROUPS, clampSize, groupOf, restoreToolSettings, shareColor, stepSize } from "./tools.js";
+import { COLORED, GROUPS, clampSize, groupOf, restoreToolSettings, shareColor, stepSize } from "./tools.js";
 import { MAX_NOTES, addNote, noteAt, notesSummary } from "./notes.js";
 import { fitView, gestureView, pan, paperToScreen, rotateAt, screenToPaper, zoomAt } from "./view.js";
 
@@ -46,10 +49,10 @@ const LEVEL_INFO = {
 };
 const GROUP_HINTS = {
   write: "Pencil, ink and marker (P, I, M)",
-  paint: "Colour brush, shade and highlighter (B, S, H)",
+  paint: "Colour brush, shade, highlighter and paint bucket (B, S, H, F)",
   shapes: "Line, rectangle, ellipse, triangle, diamond and arrow (U); hold Shift for even ones",
 };
-const TOOL_ICONS = { pencil: "pencil", ink: "pen-tool", marker: "pen", brush: "paintbrush", shade: "brush", highlighter: "highlighter", eraser: "eraser" };
+const TOOL_ICONS = { pencil: "pencil", ink: "pen-tool", marker: "pen", brush: "paintbrush", shade: "brush", highlighter: "highlighter", fill: "paint-bucket", picker: "pipette", eraser: "eraser" };
 const LEVELS = {
   0: { underlay: "guide", coach: false, guide: false, submit: false, drillsOnly: true, autoScore: true },
   1: { underlay: "full", coach: true, guide: true, submit: false },
@@ -134,14 +137,70 @@ const saver = createSaver(async () => {
     const { project } = await postJSON(`/api/projects/${id}/save`, { drawing: drawingPayload({ withReference }) });
     if (withReference) state.savedReference = reference;
     if (state.project?.id === project.id) state.project = project;
-    if (state.draftVersion === version) clearDraft(); // nothing changed while saving
-    $("project-status").textContent = "";
+    if (state.draftVersion === version) {
+      clearDraft(); // nothing changed while saving
+      setSaveStatus("saved", `Saved on this computer at ${new Date(project.updated * 1000).toLocaleTimeString()}.`);
+    }
   } catch (error) {
-    $("project-status").textContent = "not saved";
-    $("project-status").title = `Could not save: ${error.message}. It will try again on the next change.`;
+    setSaveStatus("error", `Could not save: ${error.message}. It will try again on the next change.`);
     throw error;
   }
 });
+
+/** The small note next to the project name: "Saving…", "Saved ✓" or "Not saved". */
+function setSaveStatus(status, title = "") {
+  const el = $("project-status");
+  el.textContent = { saving: "Saving…", saved: "Saved ✓", error: "Not saved" }[status] ?? "";
+  el.dataset.status = status;
+  el.classList.toggle("text-destructive", status === "error");
+  el.classList.toggle("text-muted-foreground", status !== "error");
+  el.title = title;
+}
+
+// ------------------------------------------------------------------ project files and pictures
+
+const FILE_FORMAT = "drawing-room";
+
+/** Hand a blob to the browser as a download called `name`. */
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Download the open project as a .drawing.json file that "Open file" loads back. */
+function saveProjectFile() {
+  const name = state.project?.name ?? "drawing";
+  const file = { format: FILE_FORMAT, version: 1, name, saved: new Date().toISOString(), drawing: drawingPayload() };
+  const fileName = exportFileName(name, "png").replace(/\.png$/, ".drawing.json");
+  download(new Blob([JSON.stringify(file)], { type: "application/json" }), fileName);
+  flash(`Saved ${fileName}. Open it again from the project menu → Open file.`);
+}
+
+/** Load a project file as a new project. A bare drawing (no wrapper) is accepted too. */
+async function openProjectFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { throw new Error(`${file.name} is not a drawing-room file.`); }
+  const drawing = data?.format === FILE_FORMAT ? data.drawing : data;
+  if (!drawing || typeof drawing !== "object" || !Array.isArray(drawing.layers ?? drawing.strokes)) {
+    throw new Error(`${file.name} is not a drawing-room file.`);
+  }
+  const name = (typeof data?.name === "string" && data.name) || file.name.replace(/(\.drawing)?\.json$/i, "");
+  await newProject({ name, drawing });
+  flash(`Opened ${file.name} as a new project.`);
+}
+
+/** Save the drawing as a picture: the sheet and everything drawn past it, visible layers on white. */
+function exportPicture(format) {
+  return downloadSheet(state.history.doc.layers, drawnArea(), state.project?.name, format)
+    .then((name) => flash(`Saved ${name}.`))
+    .catch((error) => flash(error.message));
+}
 
 function saveDevice() {
   try {
@@ -176,6 +235,7 @@ function save() {
   saveDevice();
   if (state.loading || !state.project) return;
   writeDraft();
+  setSaveStatus("saving", "Changes save themselves a moment after you stop.");
   saver.touch();
 }
 
@@ -244,6 +304,7 @@ async function openProject(id) {
   }
   if (draft?.id === project.id && !recovered) clearDraft(); // made on an older version: the server has moved on
   if (recovered) { state.savedReference = undefined; save(); }
+  else setSaveStatus("saved", `Saved on this computer at ${new Date(project.updated * 1000).toLocaleTimeString()}.`);
   saveDevice();
   renderProjectButton();
 }
@@ -436,7 +497,7 @@ function paintLayer(layer, transform) {
     layerCtx.setTransform(transform);
     target = layerCtx;
   }
-  for (const stroke of layer.strokes) {
+  for (const stroke of paintOrder(layer.strokes)) {
     if (state.erasing?.removed.has(stroke)) continue;
     paintStroke(target, stroke, cachedPath(stroke));
   }
@@ -679,6 +740,12 @@ function startStroke(event) {
   const [sx, sy] = local(event);
   const [px, py] = screenToPaper(state.view, sx, sy);
   const layer = activeLayer();
+  // The picker, or Alt with a colour tool, takes the colour under the pen instead of drawing. It only reads, so it
+  // works on a locked or hidden layer too.
+  if (state.tool === "picker" || (event.altKey && COLORED.includes(state.tool))) {
+    pickFromPaper(px, py);
+    return;
+  }
   if (!canDraw(layer)) {
     flash(`“${layer.name}” is ${layer.locked ? "locked" : "hidden"}. Unlock or show it, or pick another layer.`);
     return;
@@ -689,6 +756,10 @@ function startStroke(event) {
     return;
   }
   const settings = state.tools[state.tool];
+  if (state.tool === "fill") {
+    pourFill(px, py, layer);
+    return;
+  }
   if (state.tool === "shape") {
     // Dragged out from here: the shape is rebuilt from this corner to the pointer on every move.
     state.current = createStroke({ layer: layer.id, tool: "shape", size: settings.size, opacity: TOOLS.shape.opacity, color: settings.color });
@@ -709,6 +780,81 @@ function startStroke(event) {
     state.current.raw = [];
   }
   addEventPoint(event);
+}
+
+/** Largest paint-bucket mask, in pixels: past this the mask gets coarser rather than slower. */
+const FILL_MAX_PIXELS = 6_000_000;
+
+/**
+ * The paint bucket: the lines on every visible layer (not shading, highlighter or other fills) are the walls; the
+ * closed area around the tap becomes a fill on the active layer, painted under that layer's lines.
+ */
+function pourFill(px, py, layer) {
+  const [x0, y0, x1, y1] = drawnArea();
+  if (px < x0 || py < y0 || px > x1 || py > y1) { flash("Tap inside a shape on the drawing to fill it."); return; }
+  const res = Math.min(FILL_RES, Math.sqrt(FILL_MAX_PIXELS / ((x1 - x0) * (y1 - y0))));
+  const w = Math.ceil((x1 - x0) * res), h = Math.ceil((y1 - y0) * res);
+  const wallCanvas = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  const wallCtx = wallCanvas.getContext("2d", { willReadFrequently: true });
+  wallCtx.setTransform(res, 0, 0, res, -x0 * res, -y0 * res);
+  wallCtx.fillStyle = "#000";
+  for (const each of state.history.doc.layers) {
+    if (!each.visible || each.opacity <= 0) continue;
+    for (const stroke of each.strokes) {
+      if (stroke.tool === "fill" || stroke.fill || stroke.text || stroke.shade || stroke.tool === "shade" || stroke.tool === "highlighter") continue;
+      wallCtx.fill(cachedPath(stroke)); // solid, without the pencil grain: the grain's holes would let the paint leak
+    }
+  }
+  const pixels = wallCtx.getImageData(0, 0, w, h).data;
+  const walls = new Uint8Array(w * h);
+  for (let i = 0; i < walls.length; i++) walls[i] = pixels[i * 4 + 3] > 50 ? 1 : 0;
+  const found = fillArea(walls, w, h, (px - x0) * res, (py - y0) * res, Math.round(state.tools.fill.size * res));
+  if (!found) { flash("That is on a line. Tap inside a shape to fill it."); return; }
+  const outlines = toPaper(traceOutlines(found.area, w, h), x0, y0, res);
+  if (!outlines.length) return;
+  const stroke = createStroke({ layer: layer.id, tool: "fill", color: state.tools.fill.color, size: 0, opacity: 1 });
+  stroke.outlines = outlines;
+  // Its outline corners as points, so its bounds, thumbnail and Claude's view work like any stroke's.
+  stroke.points = outlines.flat().map(([x, y]) => [x, y, 0.5, 0, 0, 0]);
+  state.history.add(stroke);
+  if (found.count > walls.length * 0.9) flash("The paint filled the whole drawing: the shape may have a gap. Undo, then raise the size to close gaps.");
+  afterChange();
+  state.dirty = true;
+}
+
+/** Use a picked colour for the tool the picker came from (and its group), then go back to that tool. */
+function usePickedColor(color, where) {
+  const tool = state.tool === "picker" ? state.toolBeforePicker ?? "pencil" : state.tool;
+  shareColor(state.tools, color, tool);
+  if (state.tool === "picker") setTool(tool);
+  else renderToolSettings();
+  save();
+  flash(`Picked ${color} from ${where}.`);
+}
+
+/** The colour at a paper point: the drawing's paint there, or the reference underneath where there is none. */
+function pickFromPaper(px, py) {
+  const { color, painted } = drawingColorAt(state.history.doc.layers, px, py);
+  if (!painted && referenceVisible(state.underlayState) && state.underlay?.naturalWidth && px >= 0 && py >= 0 && px < PAPER_W && py < PAPER_H) {
+    const fromReference = imageColorAt(state.underlay, (px / PAPER_W) * state.underlay.naturalWidth, (py / PAPER_H) * state.underlay.naturalHeight);
+    if (fromReference) { usePickedColor(fromReference, "the reference"); return; }
+  }
+  usePickedColor(painted ? color : PAPER_COLOR, painted ? "the drawing" : "the paper");
+}
+
+/** Tapping the reference card with the picker (or Alt) takes the picture's own colour. */
+function pickFromReferenceCard(event) {
+  if (state.tool !== "picker" && !event.altKey) return;
+  const image = event.currentTarget;
+  if (!image.naturalWidth) return;
+  event.preventDefault();
+  // object-fit: contain — the picture is centred inside the element at one scale.
+  const box = image.getBoundingClientRect();
+  const scale = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight);
+  const u = (event.clientX - box.left - (box.width - image.naturalWidth * scale) / 2) / scale;
+  const v = (event.clientY - box.top - (box.height - image.naturalHeight * scale) / 2) / scale;
+  const color = imageColorAt(image, u, v);
+  if (color) usePickedColor(color, "the reference");
 }
 
 /** A stroke that started by the ruler: once it has moved far enough, decide whether it follows it. */
@@ -927,6 +1073,8 @@ function redo() { if (state.history.redo()) { state.marks = []; afterChange(); }
 function setTool(tool) {
   if (!TOOLS[tool]) tool = "pencil";
   if (state.noting) setNoting(false);
+  // The picker remembers the tool it came from, to hand back to it after one pick.
+  if (tool === "picker" && state.tool !== "picker") state.toolBeforePicker = state.tool;
   state.tool = tool;
   const group = groupOf(tool);
   if (group) state.groupTool[group] = tool;
@@ -1162,8 +1310,8 @@ function layerThumb(layer) {
   if (fit) {
     g.setTransform(fit.scale, 0, 0, fit.scale, fit.dx, fit.dy);
     g.lineCap = g.lineJoin = "round";
-    for (const stroke of layer.strokes) {
-      if (stroke.fill || stroke.text || stroke.points.length < 2) { paintStroke(g, stroke, cachedPath(stroke)); continue; }
+    for (const stroke of paintOrder(layer.strokes)) {
+      if (stroke.fill || stroke.text || stroke.tool === "fill" || stroke.points.length < 2) { paintStroke(g, stroke, cachedPath(stroke)); continue; }
       g.globalAlpha = Math.max(0.55, strokeOpacity(stroke));
       g.strokeStyle = stroke.color || "#141312";
       g.lineWidth = Math.max(stroke.size * 0.7, 2.2 / fit.scale);
@@ -1886,6 +2034,19 @@ function wire() {
 
   for (const button of $("toolbox").querySelectorAll("[data-group]")) button.addEventListener("click", () => tapGroup(button.dataset.group));
   $("toolbox").querySelector("[data-tool=eraser]").addEventListener("click", tapEraser);
+  $("toolbox").querySelector("[data-tool=picker]").addEventListener("click", () => {
+    setTool(state.tool === "picker" ? state.toolBeforePicker ?? "pencil" : "picker");
+    setFlyout(null);
+  });
+  $("reference-image").addEventListener("click", pickFromReferenceCard);
+  for (const format of ["png", "jpg"]) $(`export-${format}`).addEventListener("click", () => exportPicture(format));
+  $("file-save").addEventListener("click", () => { try { saveProjectFile(); } catch (error) { flash(error.message); } });
+  $("file-open").addEventListener("click", () => $("file-input").click());
+  $("file-input").addEventListener("change", (event) => {
+    const [file] = event.target.files;
+    event.target.value = "";
+    if (file) openProjectFile(file).catch((error) => flash(error.message));
+  });
   $("tool-flyout").addEventListener("click", (event) => {
     const shape = event.target.closest("[data-shape]");
     if (shape) { state.shapeKind = shape.dataset.shape; setTool("shape"); save(); return; }
@@ -1998,9 +2159,16 @@ function wire() {
     if (e.key === "Escape") { closePopovers(); if (state.noting) setNoting(false); return; }
     const key = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && key === "z") { e.preventDefault(); (e.shiftKey ? redo : undo)(); return; }
+    // ⌘S / Ctrl+S saves now (it saves by itself anyway); with ⇧ it also downloads the project file.
+    if ((e.metaKey || e.ctrlKey) && key === "s") {
+      e.preventDefault();
+      if (e.shiftKey) { saveProjectFile(); return; }
+      saver.flush().then(() => flash("Saved.")).catch((error) => flash(`Could not save: ${error.message}`));
+      return;
+    }
     if (e.metaKey || e.ctrlKey) return;
     if (e.code === "Space") { state.input.spaceDown = true; e.preventDefault(); return; }
-    const tools = { p: "pencil", i: "ink", m: "marker", b: "brush", s: "shade", h: "highlighter", u: "shape", e: "eraser" };
+    const tools = { p: "pencil", i: "ink", m: "marker", b: "brush", s: "shade", h: "highlighter", u: "shape", f: "fill", k: "picker", e: "eraser" };
     if (tools[key]) { setTool(tools[key]); save(); }
     else if (key === "[" || key === "]") setSize(stepSize(state.tool, state.tools[state.tool].size, key === "]" ? 1 : -1));
     else if (key === "l") toggleRuler();
